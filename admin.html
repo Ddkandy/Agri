@@ -1,0 +1,2634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Admin Dashboard | FieldWork OS</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+<style>
+.wizard-step{display:none}.wizard-step.active{display:block}
+.step-dot{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;font-weight:700;font-size:13px;background:#e2e8f0;color:#64748b}
+.step-dot.done{background:#059669;color:#fff}.step-dot.now{background:#4f46e5;color:#fff}
+.node-card{border:2px solid #e2e8f0;border-radius:16px;padding:14px;background:#fff;cursor:pointer;transition:.15s}
+.node-card.sel{border-color:#4f46e5;background:#eef2ff}
+.node-card.off{opacity:.6}
+.switch{width:44px;height:24px;border-radius:999px;background:#cbd5e1;position:relative;cursor:pointer;flex-shrink:0}
+.switch:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff;transition:.15s}
+.switch.on{background:#059669}.switch.on:after{left:23px}
+.q-preview{border:1px dashed #94a3b8;border-radius:14px;padding:14px;background:#f8fafc}
+</style>
+<script>
+window.addEventListener('error',function(e){
+  var d=document.getElementById('jsError');
+  if(!d){
+    d=document.createElement('div');
+    d.id='jsError';
+    d.style.cssText='background:#fef2f2;color:#b91c1c;padding:12px;margin:12px;border-radius:12px;font-size:13px';
+    document.body.prepend(d);
+  }
+  d.textContent='JS Error: '+(e.message||'unknown');
+});
+</script>
+<style>
+.modal-back{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);z-index:100;display:none;align-items:flex-end;justify-content:center;padding:12px}
+.modal-back.show{display:flex}
+.modal-card{background:#fff;border-radius:22px 22px 16px 16px;width:100%;max-width:460px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25);animation:slideUp .22s ease}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(80px);background:#0f172a;color:#fff;padding:12px 18px;border-radius:999px;font-size:13px;font-weight:600;z-index:120;transition:.25s;max-width:92vw;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.ok{background:#059669}.toast.err{background:#dc2626}
+@media(min-width:640px){.modal-back{align-items:center;padding:20px}.modal-card{border-radius:20px}}
+</style>
+</head>
+
+<body class="bg-[#f8fafc]">
+<div id="modalBack" class="modal-back" onclick="if(event.target===this) closeModal(false)"><div class="modal-card">
+<div id="modalIcon" class="text-3xl">ℹ️</div><h3 id="modalTitle" class="font-bold text-[18px] mt-2">Title</h3><p id="modalMsg" class="text-sm text-slate-500 mt-1"></p>
+<div id="modalInputWrap" class="hidden mt-3"><input id="modalInput" placeholder=""></div>
+<div id="modalSelectWrap" class="hidden mt-3"><select id="modalSelect"></select></div>
+<div class="flex gap-2 mt-5"><button id="modalCancel" onclick="closeModal(false)" class="btn btn-ghost flex-1">Cancel</button><button id="modalOk" onclick="closeModal(true)" class="btn btn-primary flex-1">OK</button></div>
+</div></div>
+<div id="toast" class="toast"></div>
+
+<!-- SIDEBAR OVERLAY -->
+<div id="sidebarOverlay" onclick="closeSidebar()" class="fixed inset-0 bg-black/50 z-[35] hidden lg:hidden"></div>
+<button id="sidebarCloseFab" onclick="closeSidebar()" class="hidden lg:hidden fixed top-3 right-3 z-[60] w-11 h-11 rounded-full bg-white shadow-xl text-xl font-bold" aria-label="Close Menu">✕</button>
+
+<!-- SIDEBAR -->
+<aside id="sidebar" class="sidebar p-5 flex flex-col">
+<div class="flex items-center gap-3">
+  <div class="w-11 h-11 rounded-xl bg-white text-slate-900 grid place-items-center font-bold text-lg shrink-0">A</div>
+  <div class="min-w-0 flex-1">
+    <div class="font-bold leading-tight">FieldWork OS</div>
+    <div class="text-[11px] text-slate-400">DD Kandy • Admin Dashboard</div>
+  </div>
+  <button onclick="closeSidebar()" aria-label="Close Menu" class="lg:hidden shrink-0 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white text-[20px] font-bold grid place-items-center leading-none">✕</button>
+</div>
+<nav class="mt-7 space-y-1 text-[14px]">
+  <button data-nav="dashboard" onclick="goNav('dashboard')" class="nav-btn w-full text-left px-4 py-3 rounded-xl bg-white text-slate-900 font-semibold">🏠 Dashboard</button>
+  <button data-nav="targets" onclick="goNav('targets')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">🎯 Target Setup<br><span class="text-[11px] font-normal opacity-80">Extension & Development Targets</span></button>
+  <button data-nav="builder" onclick="goNav('builder')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">🧩 Form Builder<br><span class="text-[11px] font-normal opacity-80">Create & Manage Questions</span></button>
+  <button data-nav="pricelist" onclick="goNav('pricelist')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">💰 Item Price List<br><span class="text-[11px] font-normal opacity-80">Year / Program / Item / Price</span></button>
+  <button data-nav="pivapproval" onclick="goNav('pivapproval')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">🧾 PIV Approval<br><span class="text-[11px] font-normal opacity-80">Unit → AD → DD Approval</span></button>
+  <button data-nav="data" onclick="goNav('data')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">📊 Data View<br><span class="text-[11px] font-normal opacity-80">Edit / Delete / Filter / Export</span></button>
+  <button data-nav="users" onclick="goNav('users')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">👥 Users<br><span class="text-[11px] font-normal opacity-80">Officer Name & Credentials</span></button>
+  <button data-nav="hierarchy" onclick="goNav('hierarchy')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">🏛️ Offices<br><span class="text-[11px] font-normal opacity-80">45 Divisions & Offices</span></button>
+</nav>
+<div class="lg:hidden mt-2"><button onclick="closeSidebar()" class="w-full rounded-xl bg-white/10 py-2 text-xs font-semibold">← Back to Page</button></div>
+<div class="mt-auto rounded-2xl bg-white/10 p-4">
+  <div class="text-sm font-semibold" id="roleLabel">Admin</div>
+  <div class="text-xs text-slate-300" id="userLabel"></div>
+  <div class="text-[11px] text-emerald-300 mt-1" id="scopeLabel"></div>
+  <button onclick="logout()" class="mt-3 w-full rounded-xl bg-red-500 py-2 text-sm font-semibold">Logout</button>
+</div>
+</aside>
+
+<div class="main">
+<div class="topbar">
+  <div class="flex items-center gap-3">
+    <button onclick="openSidebar()" class="lg:hidden btn btn-ghost px-3">☰ Menu</button>
+    <h1 class="font-bold text-[17px] md:text-[19px]" id="pageTitle">Dashboard</h1>
+    <span class="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold whitespace-nowrap">DD Kandy</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <span id="sbStatus" class="text-[11px] px-2 py-1 rounded bg-slate-100">Data...</span>
+    <button onclick="goNav('targets')" class="btn btn-primary px-4 py-2 text-xs">🎯 Target Setup</button>
+  </div>
+</div>
+
+<div class="p-4 md:p-6 max-w-[1240px] mx-auto space-y-5">
+
+<!-- ============ DASHBOARD ============ -->
+<div id="page-dashboard" class="page">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <div onclick="window.location.href='extension.html'" class="cursor-pointer rounded-3xl p-6 text-white shadow-lg transition-transform hover:-translate-y-1 relative overflow-hidden" style="background:linear-gradient(135deg,#2563eb,#1d4ed8)">
+    <div class="flex justify-between items-start">
+      <div>
+        <div class="text-xs font-bold uppercase tracking-wider text-blue-100">EXTENSION PROGRESS</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span class="text-4xl font-extrabold" id="extProgVal">0</span>
+          <span class="text-lg font-medium text-blue-200">/ <span id="extTargetVal">0</span></span>
+        </div>
+        <p class="text-xs text-blue-100 mt-1">Completed Extension Quantity (Click for details →)</p>
+      </div>
+      <div class="flex flex-col items-end gap-2"><div class="w-11 h-11 rounded-2xl bg-white/15 grid place-items-center text-xl">🌾</div></div>
+    </div>
+    <div class="mt-5 w-full bg-blue-950/40 rounded-full h-3 overflow-hidden">
+      <div id="extProgBar" class="bg-white h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <div onclick="window.location.href='development.html'" class="cursor-pointer rounded-3xl p-6 text-white shadow-lg transition-transform hover:-translate-y-1 relative overflow-hidden" style="background:linear-gradient(135deg,#059669,#047857)">
+    <div class="flex justify-between items-start">
+      <div>
+        <div class="text-xs font-bold uppercase tracking-wider text-emerald-100">DEVELOPMENT PROGRESS</div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span class="text-4xl font-extrabold" id="devProgVal">0</span>
+          <span class="text-lg font-medium text-emerald-200">/ <span id="devTargetVal">0</span></span>
+        </div>
+        <p class="text-xs text-emerald-100 mt-1">Completed Development Quantity (Click for details →)</p>
+      </div>
+      <div class="flex flex-col items-end gap-2"><div class="w-11 h-11 rounded-2xl bg-white/15 grid place-items-center text-xl">🏗️</div></div>
+    </div>
+    <div class="mt-5 w-full bg-emerald-950/40 rounded-full h-3 overflow-hidden">
+      <div id="devProgBar" class="bg-white h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+  <div class="card !p-4"><div class="text-xs text-slate-500">Extension Nodes</div><div class="text-2xl font-bold mt-1 text-indigo-600" id="kExt">0</div></div>
+  <div class="card !p-4"><div class="text-xs text-slate-500">Development Nodes</div><div class="text-2xl font-bold mt-1 text-emerald-600" id="kDev">0</div></div>
+  <div class="card !p-4"><div class="text-xs text-slate-500">Total Questions</div><div class="text-2xl font-bold mt-1" id="kQ">0</div></div>
+  <div class="card !p-4"><div class="text-xs text-slate-500">Total Responses</div><div class="text-2xl font-bold mt-1" id="kR">0</div></div>
+</div>
+
+<div class="grid md:grid-cols-3 gap-4 mt-5">
+  <div class="card !p-4 flex flex-col justify-between gap-3 border-2 border-indigo-100">
+    <div><h3 class="font-bold text-indigo-900">🎯 Target Setup</h3><p class="text-xs text-slate-500 mt-1">Configure Season/Year, Program, Sub Program, Item and 45 AI Offices Targets</p></div>
+    <button onclick="goNav('targets')" class="btn btn-primary w-full py-2.5 text-xs">Setup Targets →</button>
+  </div>
+  <div class="card !p-4 flex flex-col justify-between gap-3">
+    <div><h3 class="font-bold">🧩 Form Builder</h3><p class="text-xs text-slate-500 mt-1">Create Unit questions for configured targets and items</p></div>
+    <button onclick="goNav('builder')" class="btn btn-ghost w-full py-2.5 text-xs">Open Builder →</button>
+  </div>
+  <div class="card !p-4 flex flex-col justify-between gap-3">
+    <div><h3 class="font-bold">💰 Item Price List</h3><p class="text-xs text-slate-500 mt-1">Manage Subsidy, Unit Price, Gov Price, Farmer Price and Chart</p></div>
+    <button onclick="goNav('pricelist')" class="btn btn-success w-full py-2.5 text-xs">Open Price List →</button>
+  </div>
+</div>
+
+<div class="card mt-5"><h3 class="font-bold">Currently Shown in Unit — <span class="text-emerald-600">Published Only</span></h3><div id="publishedBox" class="grid md:grid-cols-2 gap-3 mt-4"></div></div>
+<div class="card mt-5"><h3 class="font-bold">Latest Submissions (Latest 8)</h3><div id="recentBox" class="mt-3 space-y-2"></div><button onclick="goNav('data')" class="btn btn-ghost mt-3 text-xs">View All Data →</button></div>
+</div>
+
+<!-- ============ TARGET SETUP ============ -->
+<div id="page-targets" class="page hidden space-y-5">
+  <div class="card !py-3 flex flex-wrap items-center gap-2 text-[13px]">
+    <span class="font-bold">🎯 Target Setup:</span>
+    <span id="tCrumb" class="text-indigo-700 font-semibold">Select Extension / Development</span>
+    <button onclick="resetTargetWizard()" class="ml-auto btn btn-ghost px-3 py-1.5 text-xs">↺ Start Over</button>
+  </div>
+
+  <div id="tw1" class="card">
+    <h2 class="font-bold text-[19px]">Step 1 — Select Category (Extension / Development)</h2>
+    <p class="text-sm text-slate-500 mt-1">Structure configured here automatically appears in Form Builder and Item Price List.</p>
+    <div class="grid md:grid-cols-2 gap-4 mt-5">
+      <button onclick="tPickMain('extension')" class="text-left rounded-2xl border-2 border-indigo-200 hover:border-indigo-600 p-5 bg-white transition">
+        <div class="text-3xl">🌾</div>
+        <div class="font-bold text-lg mt-2">Extension Target Setup</div>
+        <div class="text-sm text-slate-500 mt-1">Order: Season → Main Program → Sub Program → 45 AI Offices Target</div>
+        <div class="mt-3 text-indigo-600 font-semibold text-sm">Select →</div>
+      </button>
+      <button onclick="tPickMain('development')" class="text-left rounded-2xl border-2 border-emerald-200 hover:border-emerald-600 p-5 bg-white transition">
+        <div class="text-3xl">🏗️</div>
+        <div class="font-bold text-lg mt-2">Development Target Setup</div>
+        <div class="text-sm text-slate-500 mt-1">Order: Year → Program → Sub Program → Item → 45 AI Offices Target</div>
+        <div class="mt-3 text-emerald-600 font-semibold text-sm">Select →</div>
+      </button>
+    </div>
+  </div>
+
+  <div id="tw2" class="card hidden">
+    <h2 class="font-bold text-[19px]" id="tw2Title">Step 2 — Season / Year</h2>
+    <p class="text-xs text-slate-500 mt-1">Copy All (Programs, Sub Programs, Items & Targets)</p>
+    <div class="flex gap-2 mt-4">
+      <input id="tNewL1" placeholder="e.g. 2026/27 Maha or 2026">
+      <button onclick="tAddNode(1)" class="btn btn-primary px-4 shrink-0">+ Add</button>
+    </div>
+    <div id="tL1List" class="mt-4 space-y-2"></div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="tGoto(1)" class="btn btn-ghost">← Back</button>
+      <button onclick="tGoto(3)" id="tw2Next" class="btn btn-primary ml-auto" disabled>Next →</button>
+    </div>
+  </div>
+
+  <div id="tw3" class="card hidden">
+    <h2 class="font-bold text-[19px]" id="tw3Title">Step 3 — Program</h2>
+    <p class="text-xs text-slate-500 mt-1" id="tw3Desc">Copy All (Sub Programs, Items & Targets)</p>
+    <div class="flex gap-2 mt-4">
+      <input id="tNewL2" placeholder="e.g. Paddy Cultivation or PSDG / KNUCKLES">
+      <button onclick="tAddNode(2)" class="btn btn-primary px-4 shrink-0">+ Add</button>
+    </div>
+    <div id="tL2List" class="mt-4 space-y-2"></div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="tGoto(2)" class="btn btn-ghost">← Back</button>
+      <button onclick="tGoto(4)" id="tw3Next" class="btn btn-primary ml-auto" disabled>Next →</button>
+    </div>
+  </div>
+
+  <div id="tw4" class="card hidden">
+    <h2 class="font-bold text-[19px]" id="tw4Title">Step 4 — Sub Program</h2>
+    <p class="text-xs text-slate-500 mt-1" id="tw4Desc">Copy All (Items / Targets)</p>
+    <div class="flex gap-2 mt-4">
+      <input id="tNewL3" placeholder="Enter Sub Program name">
+      <button onclick="tAddNode(3)" class="btn btn-primary px-4 shrink-0">+ Add</button>
+    </div>
+    <div id="tL3List" class="mt-4 space-y-2"></div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="tGoto(3)" class="btn btn-ghost">← Back</button>
+      <button onclick="tAfterL3()" id="tw4Next" class="btn btn-primary ml-auto">Next →</button>
+    </div>
+  </div>
+
+  <div id="tw5" class="card hidden">
+    <h2 class="font-bold text-[19px]">Step 5 — Select / Add Item (Development)</h2>
+    <p class="text-xs text-slate-500 mt-1">Copy All (Item & AI Office Targets) • Default Development questions are auto-generated for each Item • Select Excel Range (e.g. B5:B10) to auto-add each row as an Item</p>
+    <div class="flex flex-wrap gap-2 mt-4">
+      <input id="tNewL4" placeholder="e.g. Paddy Seed / Urea / Water Pump" class="flex-1 min-w-[200px]">
+      <button onclick="tAddNode(4)" class="btn btn-primary px-4 shrink-0">+ Add Item</button>
+      <label class="btn btn-success px-4 shrink-0 cursor-pointer">📥 Import Range (Excel)<input type="file" id="tItemExcelInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="tImportItemsExcel(event)"></label>
+    </div>
+    <div id="tL4List" class="mt-4 space-y-2"></div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="tGoto(4)" class="btn btn-ghost">← Back</button>
+      <button onclick="tGoto(6)" id="tw5Next" class="btn btn-primary ml-auto">Next: AI Office Targets →</button>
+    </div>
+  </div>
+
+  <div id="tw6" class="card hidden">
+    <div class="flex flex-wrap justify-between items-center gap-3">
+      <div>
+        <h2 class="font-bold text-[19px]">🏛️ AI Office Target Update</h2>
+        <p class="text-xs text-slate-500 mt-1">AD Office → AI Office Target (Saving Development targets also auto-saves default questions)</p>
+      </div>
+      <div class="bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl text-right">
+        <div class="text-[11px] text-indigo-600 font-semibold">Total Target Sum</div>
+        <div class="text-xl font-extrabold text-indigo-900" id="tTotalSum">0</div>
+      </div>
+    </div>
+
+    <div class="mt-4 bg-slate-50 p-3 rounded-2xl border">
+      <label class="text-xs font-semibold text-slate-600">Select AD Office (Sub Office):</label>
+      <select id="tFilterAdOffice" onchange="renderTargetUnitsTable()" class="mt-1 bg-white"></select>
+    </div>
+
+    <div class="table-wrap mt-4">
+      <table>
+        <thead>
+          <tr>
+            <th>AD Office</th>
+            <th>AI Office</th>
+            <th class="w-40">Target Value</th>
+          </tr>
+        </thead>
+        <tbody id="tUnitsTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mt-5">
+      <button onclick="tBackFromUnits()" class="btn btn-ghost">← Back</button>
+      <button onclick="saveAllTargets()" class="btn btn-success ml-auto px-6">💾 Save Targets</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BUILDER ============ -->
+<div id="page-builder" class="page hidden">
+<div class="card !py-3 flex flex-wrap items-center gap-2 text-[13px]"><span class="font-bold">Current Path:</span><span id="crumb" class="text-indigo-700 font-semibold">Select Extension / Development</span><button onclick="resetWizard()" class="ml-auto btn btn-ghost px-3 py-1.5 text-xs">↺ Start Over</button></div>
+
+<div class="flex items-center gap-2 md:gap-3 text-[11px] md:text-xs font-semibold overflow-x-auto pb-1">
+<div class="flex items-center gap-2"><span class="step-dot now" id="dot1">1</span><span>Category</span></div><span class="text-slate-300">→</span>
+<div class="flex items-center gap-2"><span class="step-dot" id="dot2">2</span><span id="lbl2">Season / Year</span></div><span class="text-slate-300">→</span>
+<div class="flex items-center gap-2"><span class="step-dot" id="dot3">3</span><span id="lbl3">Program</span></div><span class="text-slate-300" id="arrow4">→</span>
+<div class="flex items-center gap-2" id="step4Wrap"><span class="step-dot" id="dot4">4</span><span id="lbl4">Sub Program</span></div><span class="text-slate-300" id="arrow5">→</span>
+<div class="flex items-center gap-2" id="step5Wrap"><span class="step-dot" id="dot5">5</span><span id="lbl5">Item</span></div><span class="text-slate-300" id="arrow6">→</span>
+<div class="flex items-center gap-2" id="step6Wrap"><span class="step-dot" id="dot6">6</span><span>Questions</span></div>
+</div>
+
+<div id="w1" class="wizard-step active">
+<div class="card"><h2 class="font-bold text-[19px]">Step 1 — Select Extension / Development</h2>
+<div class="grid md:grid-cols-2 gap-4 mt-5">
+<button onclick="pickMain('extension')" class="text-left rounded-2xl border-2 border-indigo-200 hover:border-indigo-600 p-5 bg-white"><div class="text-3xl">🌾</div><div class="font-bold text-lg mt-2">Extension</div><div class="mt-3 text-indigo-600 font-semibold text-sm">Select →</div></button>
+<button onclick="pickMain('development')" class="text-left rounded-2xl border-2 border-emerald-200 hover:border-emerald-600 p-5 bg-white"><div class="text-3xl">🏗️</div><div class="font-bold text-lg mt-2">Development</div><div class="mt-3 text-emerald-600 font-semibold text-sm">Select →</div></button>
+</div></div>
+</div>
+
+<div id="w2" class="wizard-step">
+<div class="card"><div class="flex justify-between items-center"><h2 class="font-bold text-[19px]" id="w2Title">Step 2</h2><button onclick="goNav('targets')" class="btn btn-ghost text-xs">+ Go to Target Setup</button></div>
+<p class="text-xs text-slate-500 mt-1">Up / Down / Delete / Copy All & Edit</p>
+<div id="l1List" class="mt-4 space-y-2"></div>
+<div class="flex gap-2 mt-5"><button onclick="gotoStep(1)" class="btn btn-ghost">← Back</button><button onclick="gotoStep(3)" id="w2Next" class="btn btn-primary ml-auto" disabled>Next →</button></div></div>
+</div>
+
+<div id="w3" class="wizard-step">
+<div class="card"><h2 class="font-bold text-[19px]" id="w3Title">Step 3</h2><p class="text-xs text-slate-500 mt-1" id="w3Desc">Up / Down / Delete / Copy All & Edit</p>
+<div id="l2List" class="mt-4 space-y-2"></div>
+<div class="flex gap-2 mt-5"><button onclick="gotoStep(2)" class="btn btn-ghost">← Back</button><button onclick="w3Next()" id="w3Next" class="btn btn-primary ml-auto" disabled>Next →</button></div></div>
+</div>
+
+<div id="w4" class="wizard-step">
+<div class="card"><h2 class="font-bold text-[19px]" id="w4Title">Step 4 — Sub Program</h2><p class="text-xs text-slate-500 mt-1" id="w4Desc">Up / Down / Delete / Copy All & Edit</p>
+<div id="l3List" class="mt-4 space-y-2"></div>
+<div class="flex gap-2 mt-5"><button onclick="gotoStep(3)" class="btn btn-ghost">← Back</button><button onclick="w4Next()" id="w4Next" class="btn btn-primary ml-auto" disabled>Next →</button></div></div>
+</div>
+
+<div id="w5" class="wizard-step">
+<div class="card"><h2 class="font-bold text-[19px]">Step 5 — Select Item</h2><p class="text-xs text-slate-500 mt-1">Up / Down / Delete / Copy All & Edit • Selecting an item auto-prepares its questions</p>
+<div id="itemList" class="mt-4 space-y-2"></div>
+<div class="flex gap-2 mt-5"><button onclick="gotoStep(4)" class="btn btn-ghost">← Back</button><button onclick="gotoStep(6)" class="btn btn-primary ml-auto">Next: Questions →</button></div></div>
+</div>
+
+<div id="w6" class="wizard-step">
+<div class="card"><h2 class="font-bold text-[19px]">Step 6 — Create / Edit Unit Questions</h2>
+<div class="flex flex-wrap gap-2 mt-3">
+  <button onclick="loadDevTemplate()" class="btn btn-success text-xs px-3 py-2">Development Template (7 Questions)</button>
+  <button onclick="loadExtTemplate()" class="btn btn-ghost text-xs px-3 py-2">Extension Template</button>
+  <button type="button" onclick="syncCurrentQuestionsToSubSiblings()" class="btn btn-primary text-xs px-3 py-2">🔁 Sync Questions to All Items in Sub Program</button>
+</div>
+<div id="devMultiItemNote" class="hidden mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950">
+  <b>Multi-Item & Summary Rule:</b> When multiple items are selected under a sub program, each item supports per-item farmer contribution radio selection and item-specific extra questions, while common questions appear once in unit data entry and summary/data tables show one column per question and one row per item (with item-specific answers placed only on that item's row).
+</div>
+<div class="grid lg:grid-cols-[400px_1fr] gap-5 mt-4">
+<form id="qForm" class="space-y-3 border rounded-2xl p-4 h-fit bg-slate-50"><input type="hidden" id="qId">
+<div><label>Question *</label><textarea id="qText" rows="2" required class="mt-1"></textarea></div>
+<div class="grid grid-cols-2 gap-3">
+  <div>
+    <label>Answer Type</label>
+    <select id="qType" onchange="onQType()" class="mt-1">
+      <option value="short_text">Short Answer</option>
+      <option value="paragraph">Paragraph</option>
+      <option value="multiple_choice">Single Choice (Radio)</option>
+      <option value="checkbox">Multiple Choice (Checkbox)</option>
+      <option value="dropdown">Dropdown</option>
+      <option value="number">Number</option>
+      <option value="date">Date</option>
+      <option value="scale">Scale 1-5</option>
+      <option value="yes_no">Yes / No</option>
+    </select>
+  </div>
+  <div>
+    <label>Required?</label>
+    <select id="qReq" class="mt-1"><option value="1">Yes *</option><option value="0">No</option></select>
+  </div>
+</div>
+<div id="optWrap" class="hidden"><label>Options</label><div id="optList" class="space-y-2 mt-1"></div><div class="flex gap-2 mt-2"><input id="optInput" placeholder="Option value..."><button type="button" onclick="addOption()" class="btn btn-ghost px-3 shrink-0">+ Add</button></div></div>
+<button type="submit" id="saveQBtn" class="btn btn-primary w-full">Save Question</button><button type="button" onclick="resetQ()" class="btn btn-ghost w-full">Reset</button></form>
+<div><div class="font-semibold">Questions in Selected Node (<span id="qCount">0</span>)</div><div id="qList" class="mt-3 space-y-2"></div><div class="q-preview mt-4"><div class="font-semibold text-sm">👁️ Preview</div><div id="qPreview" class="mt-3 space-y-3"></div></div></div>
+</div>
+<div class="flex gap-2 mt-5"><button onclick="backFromQ()" class="btn btn-ghost">← Back</button><button onclick="finishWizard()" class="btn btn-success ml-auto">✓ Done — Dashboard</button></div></div>
+</div>
+</div>
+
+<!-- ============ ITEM PRICE LIST ============ -->
+<div id="page-pricelist" class="page hidden space-y-5">
+  <div class="card">
+    <div class="flex flex-wrap justify-between items-center gap-3">
+      <div><h2 class="font-bold text-[19px]">💰 Item Price List</h2></div>
+      <div class="flex flex-wrap gap-2">
+        <label class="btn btn-ghost px-3 py-1.5 text-xs cursor-pointer">📥 Import Excel<input type="file" id="plExcelInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="importPriceExcel(event)"></label>
+        <button onclick="downloadPriceExcel()" class="btn btn-success px-3 py-1.5 text-xs">⬇ Download Excel</button>
+      </div>
+    </div>
+    <div class="grid lg:grid-cols-[420px_1fr] gap-5 mt-5">
+      <div class="border rounded-2xl p-4 bg-slate-50 h-fit">
+        <form id="plForm" class="space-y-3 mt-4">
+          <input type="hidden" id="plEditId">
+          <div><label class="text-xs font-semibold">1. Year *</label><select id="plYear" onchange="onPlYearChange()" required class="mt-1 bg-white"></select></div>
+          <div><label class="text-xs font-semibold">2. Program *</label><select id="plProgram" onchange="onPlProgChange()" required class="mt-1 bg-white"></select></div>
+          <div><label class="text-xs font-semibold">3. Sub Program *</label><select id="plSubProgram" onchange="onPlSubProgChange()" required class="mt-1 bg-white"></select></div>
+          <div><label class="text-xs font-semibold">4. Item Name *</label><select id="plItemSelect" onchange="onPlItemSelectChange()" class="mt-1 bg-white"></select><input id="plItemCustom" placeholder="Custom Item..." class="mt-2 bg-white hidden"></div>
+          <hr>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="text-xs font-semibold">5. Subsidy *</label><select id="plSubsidy" onchange="calcPlPrices()" class="mt-1 bg-white"><option value="75%">75%</option><option value="50%">50%</option><option value="25%">25%</option><option value="free">Free</option></select></div>
+            <div><label class="text-xs font-semibold">6. Unit Price *</label><input id="plUnitPrice" type="number" step="0.01" min="0" oninput="calcPlPrices()" required class="mt-1 bg-white"></div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border">
+            <div><label class="text-[11px] text-slate-500 font-semibold">Gov Price - Auto</label><input id="plGovPrice" type="number" readonly class="mt-1 bg-slate-50 font-bold text-emerald-700" value="0.00"></div>
+            <div><label class="text-[11px] text-slate-500 font-semibold">Farmer Price - Auto</label><input id="plFarmerPrice" type="number" readonly class="mt-1 bg-slate-50 font-bold text-indigo-700" value="0.00"></div>
+          </div>
+          <div class="flex gap-2"><button type="submit" class="btn btn-primary flex-1">💾 Save Price</button><button type="button" onclick="resetPlForm()" class="btn btn-ghost">Reset</button></div>
+        </form>
+      </div>
+      <div class="space-y-5">
+        <div class="border rounded-2xl p-4 bg-white"><div class="relative w-full h-[250px]"><canvas id="plChartCanvas"></canvas></div></div>
+        <div class="border rounded-2xl p-4 bg-white"><div class="table-wrap"><table><thead><tr><th>Year / Program</th><th>Item</th><th>Subsidy</th><th>Unit</th><th>Gov</th><th>Farmer</th><th>Action</th></tr></thead><tbody id="plTableBody"></tbody></table></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PIV APPROVAL ============ -->
+<div id="page-pivapproval" class="page hidden space-y-5">
+  <div class="card space-y-4">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <div>
+        <span class="px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[11px] font-bold uppercase">🧾 PIV APPROVAL (UNIT → AD OFFICE → DD OFFICE)</span>
+        <h2 class="text-xl font-bold text-slate-900 mt-1">PIV Approval Management</h2>
+        <p class="text-xs text-slate-500">All PIV records are stored directly in Supabase. Approve and set DD Approval Date.</p>
+      </div>
+      <button onclick="sbSync()" class="btn btn-ghost text-xs px-3 py-2">↻ Refresh PIV</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-violet-50/60 p-3.5 rounded-2xl border border-violet-200">
+      <div>
+        <label class="text-[11px] font-bold text-violet-950 uppercase">AD Office</label>
+        <select id="admPivFilterAd" onchange="renderAdminPivTable()" class="mt-1 bg-white text-xs">
+          <option value="">All AD Offices</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-violet-950 uppercase">Year</label>
+        <select id="admPivFilterYear" onchange="renderAdminPivTable()" class="mt-1 bg-white text-xs">
+          <option value="">All Years</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-violet-950 uppercase">Main Program</label>
+        <select id="admPivFilterProg" onchange="renderAdminPivTable()" class="mt-1 bg-white text-xs">
+          <option value="">All Main Programs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-violet-950 uppercase">DD Status</label>
+        <select id="admPivFilterStatus" onchange="renderAdminPivTable()" class="mt-1 bg-white text-xs">
+          <option value="">All Status</option>
+          <option value="dd_pending">DD Office Pending</option>
+          <option value="dd_approved">DD Office Approved</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Auto Unit No</th>
+            <th>AI / AD Office</th>
+            <th>Year / Program</th>
+            <th>Sub Program / Item</th>
+            <th>Units / Amount</th>
+            <th>Banked / PIV Date</th>
+            <th>AD Office Status</th>
+            <th>DD Office Status</th>
+            <th>DD Approval Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="adminPivTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DATA VIEW ============ -->
+<div id="page-data" class="page hidden space-y-6">
+  <div class="card">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <div>
+        <h2 class="font-bold text-[19px]">Data View — Extension & Development Tables</h2>
+        <p class="text-xs text-slate-500 mt-1" id="dataScopeNote"></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="downloadCategoryExcel('extension')" class="btn btn-primary text-xs px-4">⬇ Extension Excel</button>
+        <button onclick="downloadCategoryExcel('development')" class="btn btn-success text-xs px-4">⬇ Development Excel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editBox" class="hidden card border-2 border-indigo-300 rounded-2xl p-4 bg-indigo-50/70 shadow-sm">
+    <div class="flex justify-between items-center">
+      <h4 class="font-bold text-indigo-950">✏️ Edit Record</h4>
+      <span id="editRecordMeta" class="text-xs text-slate-500"></span>
+    </div>
+    <div id="editFields" class="mt-3 space-y-3"></div>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEdit()" class="btn btn-primary px-5">💾 Save Changes</button>
+      <button onclick="closeEdit()" class="btn btn-ghost px-4">Cancel</button>
+    </div>
+  </div>
+
+  <div class="card space-y-4 border-t-4 border-t-blue-600 bg-blue-50/20">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <div>
+        <span class="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-bold">🌾 EXTENSION DATA</span>
+        <h3 class="font-bold text-lg text-blue-950 mt-1">Extension Data Table (<span id="extDataCount">0</span>)</h3>
+      </div>
+      <button onclick="downloadCategoryExcel('extension')" class="btn btn-primary text-xs px-4 py-2">⬇ Download Extension Excel</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-white p-3 rounded-2xl border border-blue-200">
+      <div>
+        <label class="text-[11px] font-bold text-blue-800 uppercase">Session</label>
+        <select id="extF_Session" onchange="onExtDataFilterChange('session')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Sessions</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-blue-800 uppercase">Main Program</label>
+        <select id="extF_MainProg" onchange="onExtDataFilterChange('prog')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Main Programs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-blue-800 uppercase">Sub Program</label>
+        <select id="extF_SubProg" onchange="renderData()" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Sub Programs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-blue-800 uppercase">AD Office</label>
+        <select id="extF_AdOffice" onchange="onExtDataFilterChange('ad')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All AD Offices</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-blue-800 uppercase">AI Office</label>
+        <select id="extF_AiOffice" onchange="renderData()" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All AI Offices</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrap bg-white rounded-xl border">
+      <table>
+        <thead id="extDataThead"></thead>
+        <tbody id="extDataTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card space-y-4 border-t-4 border-t-emerald-600 bg-emerald-50/20">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <div>
+        <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">🏗️ DEVELOPMENT DATA</span>
+        <h3 class="font-bold text-lg text-emerald-950 mt-1">Development Data Table (<span id="devDataCount">0</span>)</h3>
+      </div>
+      <button onclick="downloadCategoryExcel('development')" class="btn btn-success text-xs px-4 py-2">⬇ Download Development Excel</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 bg-white p-3 rounded-2xl border border-emerald-200">
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">Year</label>
+        <select id="devF_Year" onchange="onDevDataFilterChange('year')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Years</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">Main Program</label>
+        <select id="devF_MainProg" onchange="onDevDataFilterChange('prog')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Main Programs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">Sub Program</label>
+        <select id="devF_SubProg" onchange="onDevDataFilterChange('sub')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Sub Programs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">Items</label>
+        <select id="devF_Item" onchange="renderData()" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All Items</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">AD Office</label>
+        <select id="devF_AdOffice" onchange="onDevDataFilterChange('ad')" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All AD Offices</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-emerald-800 uppercase">AI Office</label>
+        <select id="devF_AiOffice" onchange="renderData()" class="mt-1 bg-slate-50 text-xs">
+          <option value="">All AI Offices</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrap bg-white rounded-xl border">
+      <table>
+        <thead id="devDataThead"></thead>
+        <tbody id="devDataTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="hidden">
+    <select id="fMain"></select>
+    <select id="fSub"></select>
+    <input id="fSearch">
+    <select id="fDiv"></select>
+    <tbody id="dataTbody"></tbody>
+  </div>
+</div>
+
+<!-- ============ USERS ============ -->
+<div id="page-users" class="page hidden">
+<div class="grid lg:grid-cols-[380px_1fr] gap-5">
+  <div class="card h-fit">
+    <h3 class="font-bold">User Add / Edit (Officer Name & Password)</h3>
+    <p class="text-xs text-slate-500 mt-1">Updates are saved directly to Supabase and synced to Unit</p>
+    <form id="userForm" class="mt-4 space-y-3">
+      <input type="hidden" id="uId">
+      <div><label>Name *</label><input id="uName" required class="mt-1"></div>
+      <div><label>Username *</label><input id="uUsername" required class="mt-1"></div>
+      <div><label>Officer Name *</label><input id="uOfficer" required placeholder="AI Officer Name..." class="mt-1 bg-amber-50/60 border-amber-300 font-semibold"></div>
+      <div><label>Password *</label><input id="uPassword" type="password" required placeholder="Password..." class="mt-1 bg-indigo-50/60 border-indigo-300 font-semibold"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label>Role</label><select id="uRole" class="mt-1"><option value="unit_user">Unit</option><option value="sub_admin">Sub Admin</option><option value="main_admin">Main Admin</option></select></div>
+        <div><label>Status</label><select id="uStatus" class="mt-1"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+      </div>
+      <div><label>Sub Office (AD)</label><select id="uSub" onchange="onUSub()" class="mt-1"></select></div>
+      <div><label>Division (AI)</label><select id="uDiv" onchange="onUDiv()" class="mt-1"></select></div>
+      <div><label>Office</label><select id="uOffice" class="mt-1"></select></div>
+      <button type="submit" id="saveUserBtn" class="btn btn-primary w-full">Save Officer Name & User</button>
+      <button type="button" onclick="resetUser()" class="btn btn-ghost w-full">Reset</button>
+    </form>
+  </div>
+  <div class="card">
+    <h3 class="font-bold">Users</h3>
+    <input id="userSearch" placeholder="Search..." class="mt-3" oninput="renderUsers()">
+    <div id="userList" class="mt-4 space-y-2"></div>
+  </div>
+</div>
+</div>
+
+<!-- ============ HIERARCHY ============ -->
+<div id="page-hierarchy" class="page hidden">
+<div class="card"><h3 class="font-bold">45 Sub-Divisions & Offices</h3><div class="grid md:grid-cols-[280px_1fr] gap-5 mt-5"><div class="space-y-2" id="hierList"></div><div><div class="rounded-2xl border p-4"><h4 class="font-bold" id="hierTitle"></h4><div id="hierDivs" class="mt-3 space-y-2"></div></div><div class="rounded-2xl border p-4 mt-4"><h4 class="font-bold" id="officeTitle"></h4><div id="officeList" class="mt-3 space-y-2"></div><div class="flex gap-2 mt-4"><input id="newOfficeName" placeholder="New office name..."><button onclick="addOffice()" class="btn btn-primary px-4 shrink-0">+ Add</button></div></div></div></div></div>
+</div>
+
+</div></div>
+
+<script id="hier-data" type="application/json">[{"id":"sub1","name":"ADA Kundasale","divisions":[{"name":"Dambagahapitiya","offices":["Dambagahapitiya"]},{"name":"Kalunthenna","offices":["Kalunthenna"]},{"name":"Nugethenna","offices":["Nugethenna"]},{"name":"Morayaya","offices":["Morayaya"]},{"name":"Ulpathagama","offices":["Ulpathagama"]},{"name":"Namadagala","offices":["Namadagala"]},{"name":"Theldeniya","offices":["Theldeniya"]},{"name":"Udispaththuwa","offices":["Udispaththuwa"]},{"name":"Wendaruwa","offices":["Wendaruwa"]},{"name":"Digana","offices":["Digana"]},{"name":"Gunnepana","offices":["Gunnepana"]},{"name":"Manikhinna","offices":["Manikhinna"]},{"name":"Wavinna","offices":["Wavinna"]},{"name":"Medamahanuwara","offices":["Medamahanuwara"]}]},{"id":"sub2","name":"ADA Kandy","divisions":[{"name":"Waththegama","offices":["Waththegama"]},{"name":"Huluganga","offices":["Huluganga"]},{"name":"Bowala","offices":["Bowala"]},{"name":"Ketawalaleula","offices":["Ketawalaleula"]},{"name":"Galaha","offices":["Galaha"]},{"name":"Marassana","offices":["Marassana"]},{"name":"Thalathuoya","offices":["Thalathuoya"]}]},{"id":"sub3","name":"ADA Udunuwara / Yatinuwara","divisions":[{"name":"Edaduwawe","offices":["Edaduwawe"]},{"name":"Giragama","offices":["Giragama"]},{"name":"Manikdiwella","offices":["Manikdiwella"]},{"name":"Alapalawala","offices":["Alapalawala"]},{"name":"Ambanwala","offices":["Ambanwala"]},{"name":"Imbuldeniya","offices":["Imbuldeniya"]},{"name":"Pethiyagoda","offices":["Pethiyagoda"]},{"name":"Thalawathura","offices":["Thalawathura"]},{"name":"Medapitiya","offices":["Medapitiya"]},{"name":"Mulgama","offices":["Mulgama"]},{"name":"Delpitiya","offices":["Delpitiya"]},{"name":"Gampola","offices":["Gampola"]},{"name":"Kuruduwaththa","offices":["Kuruduwaththa"]},{"name":"Rambukpitiya","offices":["Rambukpitiya"]}]},{"id":"sub4","name":"ADA Harispattuwa","divisions":[{"name":"Aludeniya","offices":["Aludeniya"]},{"name":"Galagedara","offices":["Galagedara"]},{"name":"Welivita","offices":["Welivita"]},{"name":"Ankumbura","offices":["Ankumbura"]},{"name":"Batugoda","offices":["Batugoda"]},{"name":"Wawala","offices":["Wawala"]},{"name":"Alawathugoda","offices":["Alawathugoda"]},{"name":"Medawala","offices":["Medawala"]},{"name":"Yatiwawala","offices":["Yatiwawala"]},{"name":"Hatharaliyadda","offices":["Hatharaliyadda"]}]}]</script>
+
+<script>
+const SUPABASE_URL='https://ghvlbmpjwxgvtlvdxnpi.supabase.co';
+const SUPABASE_KEY='sb_publishable_cRpQp_yLMSYO3VayxQfmXg_Bs-C-ffA';
+const sb=(typeof supabase!=='undefined')?supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+
+(async function verifySession(){
+  try{
+    var sess = localStorage.getItem('fw_session');
+    var r = localStorage.getItem('role');
+    if(!sess || !r || (r !== 'main_admin' && r !== 'sub_admin')){
+      window.location.replace('index.html');
+      return;
+    }
+    if(sb){
+      var s = await sb.auth.getSession();
+      if(!s || !s.data || !s.data.session){
+        localStorage.clear();
+        window.location.replace('index.html');
+        return;
+      }
+    }
+  }catch(e){
+    window.location.replace('index.html');
+  }
+})();
+
+window.addEventListener('pageshow', function(event) {
+  if (event.persisted || (typeof performance !== 'undefined' && performance.navigation.type === 2)) {
+    var sess = localStorage.getItem('fw_session');
+    if (!sess) { window.location.replace('index.html'); }
+  }
+});
+
+var __modalResolve=null;
+function showToast(msg,ok){var t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.className='toast show '+(ok===false?'err':ok===true?'ok':'');setTimeout(function(){t.className='toast';},2600);}
+function openModal(opt){return new Promise(function(res){__modalResolve=res;document.getElementById('modalIcon').textContent=opt.icon||'ℹ️';document.getElementById('modalTitle').textContent=opt.title||'';document.getElementById('modalMsg').textContent=opt.msg||'';var iw=document.getElementById('modalInputWrap');var sw=document.getElementById('modalSelectWrap');iw.classList.add('hidden');sw.classList.add('hidden');if(opt.input){iw.classList.remove('hidden');document.getElementById('modalInput').value=opt.value||'';document.getElementById('modalInput').placeholder=opt.placeholder||'';}if(opt.selectOptions){sw.classList.remove('hidden');document.getElementById('modalSelect').innerHTML=opt.selectOptions.map(o=>'<option value="'+o.v+'">'+o.l+'</option>').join('');}document.getElementById('modalCancel').style.display=opt.hideCancel?'none':'';document.getElementById('modalOk').textContent=opt.okText||'OK';document.getElementById('modalBack').classList.add('show');});}
+function closeModal(ok){var selEl=document.getElementById('modalSelect');var selVal=selEl?selEl.value:'';document.getElementById('modalBack').classList.remove('show');if(__modalResolve){var r=__modalResolve;__modalResolve=null;r({ok:ok,value:document.getElementById('modalInput').value,selectValue:selVal});}}
+function profAlert(msg,title){return openModal({title:title||'Info',msg:msg,icon:'✅',hideCancel:true,okText:'OK'});}
+function profConfirm(msg,title){return openModal({title:title||'Confirm',msg:msg,icon:'⚠️',okText:'Yes'}).then(r=>r.ok);}
+function profPrompt(msg,defVal,placeholder){return openModal({title:'Edit / Name',msg:msg,icon:'✏️',input:true,value:defVal||'',placeholder:placeholder||''}).then(r=>r.ok?r.value:null);}
+
+var role=localStorage.getItem('role')||'main_admin';
+var mySub=localStorage.getItem('user_subOfficeId')||'ALL';
+var roleEl=document.getElementById('roleLabel'); if(roleEl) roleEl.textContent=role==='main_admin'?'Main Admin':'Sub Admin';
+var userEl=document.getElementById('userLabel'); if(userEl) userEl.textContent=localStorage.getItem('user')||'';
+var scopeEl=document.getElementById('scopeLabel'); if(scopeEl) scopeEl.textContent=role==='main_admin'?'45 Divisions — All':'Scope: '+(localStorage.getItem('user_subOfficeName')||mySub);
+
+var hierarchy=[];
+try{
+  var hierEl=document.getElementById('hier-data');
+  if(hierEl && hierEl.textContent) hierarchy=JSON.parse(hierEl.textContent);
+}catch(e){ console.error('Hierarchy parse error:', e); }
+
+var nodes=[], questions=[], users=[], responses=[], targetRecords=[], plItems=[], pivRecords=[];
+var curMain=null, curL1=null, curL2=null, curL3=null, curSub=null, curItem=null, curStep=1, selHierSub='sub1', selHierDiv=null, editingId=null;
+
+const DEV_DEFAULT_QUESTIONS = [
+  { text: 'මුලකුරු සහිත නම', type: 'short_text', options: [], required: true },
+  { text: 'ලිපිනය', type: 'short_text', options: [], required: true },
+  { text: 'දුරකථන අංකය', type: 'number', options: [], required: true },
+  { text: 'ජාතික හැදුනුම්පත් අංකය', type: 'short_text', options: [], required: true },
+  { text: 'ගොවි දායකත්වය', type: 'multiple_choice', options: ['නොමිලේ', 'ගොවි දායකත්වය - 25%', 'ගොවි දායකත්වය - 50%'], required: true },
+  { text: 'වටිනාකම (රුපියල්)', type: 'short_text', options: [], required: false },
+  { text: 'සටහන්', type: 'short_text', options: [], required: false }
+];
+
+const DEV_FIXED_ORDER_TITLES = [
+  'මුලකුරු සහිත නම',
+  'ලිපිනය',
+  'දුරකථන අංකය',
+  'ජාතික හැදුනුම්පත් අංකය',
+  'ගොවි දායකත්වය',
+  'වටිනාකම (රුපියල්)',
+  'සටහන්'
+];
+
+function norm(s){ return String(s||'').trim().toLowerCase(); }
+function cleanOffName(s){ return String(s||'').replace(/\s*\(unit\)/gi, '').trim(); }
+function parseNum(v){ var n = parseFloat(String(v===undefined||v===null?'':v).replace(/[^0-9.-]/g,'')); return isNaN(n) ? 0 : n; }
+
+function openSidebar(){var sb=document.getElementById('sidebar');sb.style.transform='translateX(0)';sb.style.left='0';sb.style.display='flex';document.getElementById('sidebarOverlay').classList.remove('hidden');document.getElementById('sidebarCloseFab').classList.remove('hidden');}
+function closeSidebar(){var sb=document.getElementById('sidebar');if(window.innerWidth<1024)sb.style.transform='translateX(-110%)';document.getElementById('sidebarOverlay').classList.add('hidden');document.getElementById('sidebarCloseFab').classList.add('hidden');}
+
+function goNav(p){
+  closeSidebar();
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  var pg=document.getElementById('page-'+p);
+  if(pg) pg.classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.className='nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10');
+  var btn=document.querySelector('[data-nav="'+p+'"]'); if(btn)btn.className='nav-btn w-full text-left px-4 py-3 rounded-xl bg-white text-slate-900 font-semibold';
+  document.getElementById('pageTitle').textContent={'dashboard':'Dashboard','targets':'Target Setup','builder':'Form Builder','pricelist':'Item Price List','pivapproval':'PIV Approval','data':'Data View','users':'Users','hierarchy':'Offices'}[p]||'Dashboard';
+  if(p==='targets')resetTargetWizard();
+  if(p==='builder')resetWizard();
+  if(p==='pricelist')initPriceList();
+  if(p==='pivapproval'){ populateAdminPivFilters(); renderAdminPivTable(); }
+  if(p==='data'){ initDataFilters(); renderData(); }
+  if(p==='users')renderUsers();
+  if(p==='hierarchy')renderHierarchy();
+}
+
+async function logout(){
+  try{ if(sb) await sb.auth.signOut(); }catch(e){}
+  ['role','user','fw_session','user_subOfficeId','user_subOfficeName'].forEach(k=>localStorage.removeItem(k));
+  window.location.replace('index.html');
+}
+
+function renderDashboard(){
+  nodes = Array.isArray(nodes) ? nodes : [];
+  questions = Array.isArray(questions) ? questions : [];
+  responses = Array.isArray(responses) ? responses : [];
+  targetRecords = Array.isArray(targetRecords) ? targetRecords : [];
+
+  var ext=nodes.filter(n=>n && n.main_type==='extension').length; 
+  var dev=nodes.filter(n=>n && n.main_type==='development').length;
+  document.getElementById('kExt').textContent=ext; 
+  document.getElementById('kDev').textContent=dev; 
+  document.getElementById('kQ').textContent=questions.length; 
+  document.getElementById('kR').textContent=responses.length;
+  
+  var extCount = responses.filter(r=>r && r.main_type==='extension').length;
+  var devCount = responses.filter(r=>r && r.main_type==='development').length;
+  var extT = targetRecords.filter(t=>t && t.main_type==='extension').reduce((acc,cur)=>acc+(Number(cur.target_value)||0),0);
+  var devT = targetRecords.filter(t=>t && t.main_type==='development').reduce((acc,cur)=>acc+(Number(cur.target_value)||0),0);
+  
+  document.getElementById('extProgVal').textContent = extCount.toLocaleString();
+  document.getElementById('extTargetVal').textContent = extT.toLocaleString();
+  document.getElementById('extProgBar').style.width = (extT>0?Math.min(100,Math.round((extCount/extT)*100)):0)+'%';
+  
+  document.getElementById('devProgVal').textContent = devCount.toLocaleString();
+  document.getElementById('devTargetVal').textContent = devT.toLocaleString();
+  document.getElementById('devProgBar').style.width = (devT>0?Math.min(100,Math.round((devCount/devT)*100)):0)+'%';
+
+  var pub=nodes.filter(n=>n && n.is_published && n.level===1);
+  var byMain={extension:[],development:[]}; pub.forEach(n=>{ if(byMain[n.main_type]) byMain[n.main_type].push(n); });
+  var html='';
+  [['extension','🌾 Extension'],['development','🏗️ Development']].forEach(pair=>{
+    var list=byMain[pair[0]]||[]; 
+    var inner=list.map(n=>'<div class="text-[13px] py-1 border-b flex justify-between"><span>'+n.title+'</span><span class="badge badge-green">Published</span></div>').join('')||'<div class="text-xs text-slate-400">Not Published</div>';
+    html+='<div class="rounded-xl border p-4 bg-white"><div class="font-semibold text-sm">'+pair[1]+'</div><div class="mt-2">'+inner+'</div></div>';
+  });
+  document.getElementById('publishedBox').innerHTML=html;
+  document.getElementById('recentBox').innerHTML=responses.slice(0,8).map(r=>'<div class="flex justify-between gap-3 rounded-xl border p-3 text-[13px]"><div><b>'+(r.node_path||'')+'</b><div class="text-xs text-slate-500">'+(r.division||'')+' • '+(r.office||'')+'</div></div><div class="text-xs text-slate-400">'+(r.created_at?new Date(r.created_at).toLocaleDateString():'')+'</div></div>').join('')||'<div class="text-xs text-slate-400">No responses</div>';
+}
+
+/* ================= Development Default Questions ================= */
+function ensureDefaultDevQuestionsForNode(nodeId, forcePersist){
+  if(!nodeId) return [];
+  // Only create questions for a real Development node.
+  var validNode = (nodes||[]).find(n => String(n.id)===String(nodeId) && norm(n.main_type)==='development');
+  if(!validNode) return [];
+  questions = Array.isArray(questions) ? questions : [];
+  var existing = questions.filter(q => q && String(q.node_id) === String(nodeId));
+  if(existing.length > 0) return existing;
+
+  var created = [];
+  DEV_DEFAULT_QUESTIONS.forEach((tpl, idx) => {
+    var qObj = {
+      id: 'q_dev_' + nodeId + '_' + (idx + 1),
+      node_id: nodeId,
+      question_text: tpl.text,
+      question_type: tpl.type,
+      options: Array.isArray(tpl.options) ? tpl.options.slice() : [],
+      is_required: tpl.required !== false,
+      order_index: idx + 1
+    };
+    questions.push(qObj);
+    created.push(qObj);
+  });
+
+  if(forcePersist && sb && created.length){
+    sb.from('questions').upsert(created, { onConflict: 'id' }).catch(function(){});
+  }
+  return created;
+}
+
+async function autoSaveDevQuestionsForCurrentSelection(){
+  var targetNodeIds = new Set();
+  if(tL4) targetNodeIds.add(tL4);
+  if(tL3){
+    targetNodeIds.add(tL3);
+    nodes.filter(n => n && n.main_type === 'development' && n.level === 4 && n.parent_id === tL3).forEach(it => targetNodeIds.add(it.id));
+  }
+  var toUpsert = [];
+  targetNodeIds.forEach(nid => {
+    var existing = questions.filter(q => q && String(q.node_id) === String(nid));
+    if(!existing.length){
+      toUpsert = toUpsert.concat(ensureDefaultDevQuestionsForNode(nid, false));
+    } else {
+      toUpsert = toUpsert.concat(existing);
+    }
+  });
+  if(sb && toUpsert.length){
+    await sb.from('questions').upsert(toUpsert, { onConflict: 'id' });
+  }
+}
+
+/* ================= Deep Copy Helper ================= */
+function executeDeepCopyForNode(srcNode, level, newTitle, contextNodes){
+  newTitle = String(newTitle || '').trim();
+  if(!srcNode || !newTitle) return null;
+
+  var stamp = Date.now() + '_' + Math.floor(Math.random() * 1000);
+  var newNodesToSave = [];
+  var newTargetsToSave = [];
+  var newQuestionsToSave = [];
+
+  var curL1Node = contextNodes && contextNodes.l1 ? nodes.find(x => x.id === contextNodes.l1) : null;
+  var curL2Node = contextNodes && contextNodes.l2 ? nodes.find(x => x.id === contextNodes.l2) : null;
+  var curL3Node = contextNodes && contextNodes.l3 ? nodes.find(x => x.id === contextNodes.l3) : null;
+
+  function cloneQuestionsForNode(oldNodeId, newNodeId){
+    questions.filter(q => q && String(q.node_id) === String(oldNodeId)).forEach((q, qi) => {
+      var cq = Object.assign({}, q, {
+        id: 'q_' + stamp + '_' + qi + '_' + Math.random().toString(36).slice(2,5),
+        node_id: newNodeId,
+        options: Array.isArray(q.options) ? q.options.slice() : []
+      });
+      questions.push(cq);
+      newQuestionsToSave.push(cq);
+    });
+  }
+
+  function cloneTargetsForPath(l1Title, l2Title, l3Title, itemTitle, newL1Title, newL2Title, newL3Title, newItemTitle){
+    targetRecords.filter(tr =>
+      norm(tr.main_type) === norm(srcNode.main_type) &&
+      (!l1Title || norm(tr.level1) === norm(l1Title)) &&
+      (!l2Title || norm(tr.level2) === norm(l2Title)) &&
+      (!l3Title || norm(tr.level3) === norm(l3Title)) &&
+      (!itemTitle || norm(tr.item_name) === norm(itemTitle))
+    ).forEach(tr => {
+      var cleanOff = cleanOffName(tr.office);
+      var fL1 = newL1Title !== undefined ? newL1Title : tr.level1;
+      var fL2 = newL2Title !== undefined ? newL2Title : tr.level2;
+      var fL3 = newL3Title !== undefined ? newL3Title : tr.level3;
+      var fIt = newItemTitle !== undefined ? newItemTitle : tr.item_name;
+      var newRecId = [tr.main_type, fL1, fL2, fL3, fIt, tr.sub_office_id || '', tr.division || '', cleanOff].join('|');
+      var newRec = Object.assign({}, tr, {
+        id: newRecId,
+        level1: fL1,
+        level2: fL2,
+        level3: fL3,
+        item_name: fIt,
+        office: cleanOff
+      });
+      var existingIdx = targetRecords.findIndex(x => x.id === newRecId);
+      if(existingIdx > -1) targetRecords[existingIdx] = newRec;
+      else targetRecords.push(newRec);
+      newTargetsToSave.push(newRec);
+    });
+  }
+
+  var siblingsCount = nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === level && (srcNode.parent_id ? n.parent_id === srcNode.parent_id : !n.parent_id)).length;
+  var rootCloned = {
+    id: 'n_' + stamp + '_l' + level,
+    main_type: srcNode.main_type,
+    level: level,
+    parent_id: srcNode.parent_id,
+    title: newTitle,
+    subtitle: srcNode.subtitle || '',
+    is_published: srcNode.is_published !== false,
+    sort_order: siblingsCount + 1
+  };
+  nodes.push(rootCloned);
+  newNodesToSave.push(rootCloned);
+  cloneQuestionsForNode(srcNode.id, rootCloned.id);
+
+  if(level === 1){
+    nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 2 && n.parent_id === srcNode.id).forEach((p2, i2) => {
+      var c2 = { id: 'n_' + stamp + '_2_' + i2, main_type: p2.main_type, level: 2, parent_id: rootCloned.id, title: p2.title, subtitle: p2.subtitle || '', is_published: p2.is_published !== false, sort_order: p2.sort_order || (i2 + 1) };
+      nodes.push(c2); newNodesToSave.push(c2);
+      cloneQuestionsForNode(p2.id, c2.id);
+
+      nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 3 && n.parent_id === p2.id).forEach((s3, i3) => {
+        var c3 = { id: 'n_' + stamp + '_3_' + i2 + '_' + i3, main_type: s3.main_type, level: 3, parent_id: c2.id, title: s3.title, subtitle: s3.subtitle || '', is_published: s3.is_published !== false, sort_order: s3.sort_order || (i3 + 1) };
+        nodes.push(c3); newNodesToSave.push(c3);
+        cloneQuestionsForNode(s3.id, c3.id);
+
+        var l4Kids = nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 4 && n.parent_id === s3.id);
+        if(l4Kids.length){
+          l4Kids.forEach((it4, i4) => {
+            var c4 = { id: 'n_' + stamp + '_4_' + i2 + '_' + i3 + '_' + i4, main_type: it4.main_type, level: 4, parent_id: c3.id, title: it4.title, subtitle: it4.subtitle || '', is_published: it4.is_published !== false, sort_order: it4.sort_order || (i4 + 1) };
+            nodes.push(c4); newNodesToSave.push(c4);
+            cloneQuestionsForNode(it4.id, c4.id);
+            cloneTargetsForPath(srcNode.title, p2.title, s3.title, it4.title, newTitle, p2.title, s3.title, it4.title);
+          });
+        } else {
+          cloneTargetsForPath(srcNode.title, p2.title, s3.title, '', newTitle, p2.title, s3.title, '');
+        }
+      });
+    });
+  } else if(level === 2){
+    var l1Title = curL1Node ? curL1Node.title : '';
+    nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 3 && n.parent_id === srcNode.id).forEach((s3, i3) => {
+      var c3 = { id: 'n_' + stamp + '_3_' + i3, main_type: s3.main_type, level: 3, parent_id: rootCloned.id, title: s3.title, subtitle: s3.subtitle || '', is_published: s3.is_published !== false, sort_order: s3.sort_order || (i3 + 1) };
+      nodes.push(c3); newNodesToSave.push(c3);
+      cloneQuestionsForNode(s3.id, c3.id);
+
+      var l4Kids = nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 4 && n.parent_id === s3.id);
+      if(l4Kids.length){
+        l4Kids.forEach((it4, i4) => {
+          var c4 = { id: 'n_' + stamp + '_4_' + i3 + '_' + i4, main_type: it4.main_type, level: 4, parent_id: c3.id, title: it4.title, subtitle: it4.subtitle || '', is_published: it4.is_published !== false, sort_order: it4.sort_order || (i4 + 1) };
+          nodes.push(c4); newNodesToSave.push(c4);
+          cloneQuestionsForNode(it4.id, c4.id);
+          cloneTargetsForPath(l1Title, srcNode.title, s3.title, it4.title, l1Title, newTitle, s3.title, it4.title);
+        });
+      } else {
+        cloneTargetsForPath(l1Title, srcNode.title, s3.title, '', l1Title, newTitle, s3.title, '');
+      }
+    });
+  } else if(level === 3){
+    var l1Title = curL1Node ? curL1Node.title : '';
+    var l2Title = curL2Node ? curL2Node.title : '';
+    var l4Kids = nodes.filter(n => n && n.main_type === srcNode.main_type && n.level === 4 && n.parent_id === srcNode.id);
+    if(l4Kids.length){
+      l4Kids.forEach((it4, i4) => {
+        var c4 = { id: 'n_' + stamp + '_4_' + i4, main_type: it4.main_type, level: 4, parent_id: rootCloned.id, title: it4.title, subtitle: it4.subtitle || '', is_published: it4.is_published !== false, sort_order: it4.sort_order || (i4 + 1) };
+        nodes.push(c4); newNodesToSave.push(c4);
+        cloneQuestionsForNode(it4.id, c4.id);
+        cloneTargetsForPath(l1Title, l2Title, srcNode.title, it4.title, l1Title, l2Title, newTitle, it4.title);
+      });
+    } else {
+      cloneTargetsForPath(l1Title, l2Title, srcNode.title, '', l1Title, l2Title, newTitle, '');
+    }
+  } else if(level === 4){
+    var l1Title = curL1Node ? curL1Node.title : '';
+    var l2Title = curL2Node ? curL2Node.title : '';
+    var l3Title = curL3Node ? curL3Node.title : '';
+    cloneTargetsForPath(l1Title, l2Title, l3Title, srcNode.title, l1Title, l2Title, l3Title, newTitle);
+  }
+
+  return { clonedNode: rootCloned, newNodesToSave, newTargetsToSave, newQuestionsToSave };
+}
+
+async function persistCopiedBundle(bundle){
+  if(!bundle || !sb) return;
+  if(bundle.newNodesToSave.length) await sb.from('nodes').upsert(bundle.newNodesToSave, { onConflict: 'id' });
+  if(bundle.newTargetsToSave.length) await sb.from('targets').upsert(bundle.newTargetsToSave, { onConflict: 'id' });
+  if(bundle.newQuestionsToSave.length) await sb.from('questions').upsert(bundle.newQuestionsToSave, { onConflict: 'id' });
+}
+
+/* ================= Target Setup Wizard ================= */
+var tMain = null, tL1 = null, tL2 = null, tL3 = null, tL4 = null, tStep = 1;
+
+function resetTargetWizard(){ tMain=null; tL1=null; tL2=null; tL3=null; tL4=null; tGoto(1); }
+function tUpdateCrumb(){
+  var parts=[];
+  if(tMain)parts.push(tMain==='extension'?'🌾 Extension':'🏗️ Development');
+  if(tL1){let n=nodes.find(x=>x.id===tL1);if(n)parts.push(n.title);}
+  if(tL2){let n=nodes.find(x=>x.id===tL2);if(n)parts.push(n.title);}
+  if(tL3){let n=nodes.find(x=>x.id===tL3);if(n)parts.push(n.title);}
+  if(tL4){let n=nodes.find(x=>x.id===tL4);if(n)parts.push(n.title);}
+  document.getElementById('tCrumb').textContent=parts.length?parts.join(' → '):'Select Extension / Development';
+}
+function tPickMain(m){ tMain=m; tL1=null; tL2=null; tL3=null; tL4=null; tGoto(2); }
+function tGoto(s){
+  tStep=s;
+  for(let i=1;i<=6;i++){let el=document.getElementById('tw'+i);if(el)el.classList.toggle('hidden',i!==s);}
+  if(s===2)tRenderLevel(1);
+  if(s===3)tRenderLevel(2);
+  if(s===4)tRenderLevel(3);
+  if(s===5)tRenderLevel(4);
+  if(s===6)initTargetUnitsView();
+  tUpdateCrumb();
+}
+function tChildrenOf(pid, level){
+  nodes = Array.isArray(nodes) ? nodes : [];
+  return nodes.filter(n=>n && n.main_type===tMain&&n.level===level&&(pid?n.parent_id===pid:!n.parent_id)).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+}
+function tNodeCardHtml(n, isSel, level){
+  var copyBtn = '<button onclick="tCopyNodeDeep(\''+n.id+'\','+level+')" class="btn btn-ghost px-2.5 py-1 text-xs font-bold text-indigo-700 border border-indigo-200 bg-indigo-50">📋 Copy All</button>';
+  return '<div class="node-card '+(isSel?'sel':'')+' '+(!n.is_published?'off':'')+'" onclick="tSelectNode('+level+',\''+n.id+'\')">' +
+    '<div class="flex flex-wrap justify-between items-center gap-2"><div class="font-bold">'+n.title+'</div>' +
+    '<div class="flex items-center gap-2" onclick="event.stopPropagation()">' +
+      '<div class="switch '+(n.is_published?'on':'')+'" onclick="tTogglePub(\''+n.id+'\','+level+')"></div>' +
+      copyBtn +
+      '<button onclick="tMoveNode(\''+n.id+'\',-1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↑</button>' +
+      '<button onclick="tMoveNode(\''+n.id+'\',1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↓</button>' +
+      '<button onclick="tEditNode(\''+n.id+'\','+level+')" class="text-indigo-600 text-xs">Edit</button>' +
+      '<button onclick="tDeleteNode(\''+n.id+'\','+level+')" class="text-red-500 text-xs">Del</button>' +
+    '</div></div></div>';
+}
+function tRenderLevel(level){
+  if(level===1){
+    document.getElementById('tw2Title').textContent=tMain==='extension'?'Step 2 — Season':'Step 2 — Year';
+    document.getElementById('tL1List').innerHTML=tChildrenOf(null,1).map(n=>tNodeCardHtml(n,tL1===n.id,1)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+    document.getElementById('tw2Next').disabled=!tL1;
+  } else if(level===2){
+    document.getElementById('tw3Title').textContent='Step 3 — Program';
+    document.getElementById('tL2List').innerHTML=tChildrenOf(tL1,2).map(n=>tNodeCardHtml(n,tL2===n.id,2)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+    document.getElementById('tw3Next').disabled=!tL2;
+  } else if(level===3){
+    document.getElementById('tw4Title').textContent='Step 4 — Sub Program';
+    document.getElementById('tL3List').innerHTML=tChildrenOf(tL2,3).map(n=>tNodeCardHtml(n,tL3===n.id,3)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+    document.getElementById('tw4Next').textContent=tMain==='development'?'Next: Item →':'Next: AI Office Targets →';
+  } else if(level===4){
+    document.getElementById('tL4List').innerHTML=tL3?tChildrenOf(tL3,4).map(n=>tNodeCardHtml(n,tL4===n.id,4)).join(''):'';
+  }
+}
+function tSelectNode(level, id){
+  if(level===1){tL1=id;tL2=null;tL3=null;tL4=null;}
+  if(level===2){tL2=id;tL3=null;tL4=null;}
+  if(level===3){tL3=id;tL4=null;}
+  if(level===4){
+    tL4=id;
+    if(tMain==='development') ensureDefaultDevQuestionsForNode(id, true);
+  }
+  tRenderLevel(level); tUpdateCrumb();
+}
+function tAfterL3(){ if(tMain==='development')tGoto(5); else tGoto(6); }
+
+async function tCopyNodeDeep(nodeId, level){
+  var srcNode = nodes.find(x => x.id === nodeId);
+  if(!srcNode) return;
+  var newTitle = await profPrompt('New name to copy "' + srcNode.title + '" and sub-items:', srcNode.title + ' (Copy)');
+  if(!newTitle || !newTitle.trim()) return;
+  var bundle = executeDeepCopyForNode(srcNode, level, newTitle.trim(), { l1: tL1, l2: tL2, l3: tL3 });
+  if(!bundle) return;
+  if(level === 1){ tL1 = bundle.clonedNode.id; tL2 = null; tL3 = null; tL4 = null; }
+  else if(level === 2){ tL2 = bundle.clonedNode.id; tL3 = null; tL4 = null; }
+  else if(level === 3){ tL3 = bundle.clonedNode.id; tL4 = null; }
+  else if(level === 4){ tL4 = bundle.clonedNode.id; }
+  await persistCopiedBundle(bundle);
+  tRenderLevel(level); tUpdateCrumb(); renderDashboard();
+  showToast('Copied "' + newTitle.trim() + '" ✓', true);
+}
+
+function colLetterToIndex(colStr){
+  var s = String(colStr || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if(!s) return 0;
+  var n = 0;
+  for(var i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+  return Math.max(0, n - 1);
+}
+
+function parseExcelRangeString(rangeStr, sheetRef){
+  var clean = String(rangeStr || '').trim().toUpperCase().replace(/\$/g, '').replace(/\s+TO\s+/g, ':');
+  if(!clean) return null;
+  var parts = clean.split(':');
+  var match1 = parts[0].match(/^([A-Z]+)(\d+)$/);
+  if(!match1) return null;
+  var c1 = colLetterToIndex(match1[1]);
+  var r1 = Math.max(1, parseInt(match1[2], 10));
+  var c2 = c1, r2 = r1;
+  if(parts[1]){
+    var match2 = parts[1].match(/^([A-Z]+)(\d+)$/);
+    if(!match2) return null;
+    c2 = colLetterToIndex(match2[1]);
+    r2 = Math.max(r1, parseInt(match2[2], 10));
+  } else if(sheetRef){
+    try{ var dec = XLSX.utils.decode_range(sheetRef); r2 = dec.e.r + 1; }catch(e){}
+  }
+  return { startCol: Math.min(c1, c2), endCol: Math.max(c1, c2), startRow: r1, endRow: r2 };
+}
+
+function askExcelSheetAndRange(sheetNames, defaultRange){
+  return new Promise(function(resolve){
+    __modalResolve = resolve;
+    document.getElementById('modalIcon').textContent = '📊';
+    document.getElementById('modalTitle').textContent = 'Select Excel Range (e.g. B5:B10)';
+    document.getElementById('modalMsg').textContent = 'Enter Sheet and Range (e.g. B5:B10) to add each cell as an Item.';
+    var sw = document.getElementById('modalSelectWrap');
+    var selEl = document.getElementById('modalSelect');
+    if(sheetNames && sheetNames.length > 1){
+      sw.classList.remove('hidden');
+      selEl.innerHTML = sheetNames.map(s => '<option value="' + s.replace(/"/g, '&quot;') + '">' + s + '</option>').join('');
+    } else {
+      sw.classList.add('hidden');
+      if(selEl) selEl.innerHTML = sheetNames && sheetNames[0] ? '<option value="' + sheetNames[0].replace(/"/g, '&quot;') + '">' + sheetNames[0] + '</option>' : '';
+    }
+    var iw = document.getElementById('modalInputWrap');
+    var inpEl = document.getElementById('modalInput');
+    iw.classList.remove('hidden');
+    inpEl.value = defaultRange || 'B5:B10';
+    inpEl.placeholder = 'e.g. B5:B10';
+    document.getElementById('modalCancel').style.display = '';
+    document.getElementById('modalOk').textContent = 'Add Items';
+    document.getElementById('modalBack').classList.add('show');
+    setTimeout(function(){ inpEl.focus(); inpEl.select(); }, 50);
+  });
+}
+
+async function tImportItemsExcel(e){
+  var file = e.target.files && e.target.files[0];
+  if(!file) return;
+  if(!tL3){ showToast('Please select a Sub Program first', false); e.target.value=''; return; }
+  var reader = new FileReader();
+  reader.onload = async function(evt){
+    try{
+      var data = new Uint8Array(evt.target.result);
+      var wb = XLSX.read(data, {type:'array'});
+      var choice = await askExcelSheetAndRange(wb.SheetNames, 'B5:B10');
+      if(!choice || !choice.ok){ e.target.value = ''; return; }
+      var sheet = wb.Sheets[choice.selectValue || wb.SheetNames[0]];
+      if(!sheet){ showToast('Sheet not found', false); e.target.value = ''; return; }
+      var rangeParsed = parseExcelRangeString(choice.value, sheet['!ref']);
+      if(!rangeParsed){ showToast('Invalid range (e.g. B5:B10)', false); e.target.value = ''; return; }
+
+      var existingTitles = new Set(tChildrenOf(tL3, 4).map(x => norm(x.title)));
+      var addedNodes = [], addedQs = [];
+      var baseSort = tChildrenOf(tL3, 4).length;
+      var stamp = Date.now();
+
+      for(var rIdx = rangeParsed.startRow; rIdx <= rangeParsed.endRow; rIdx++){
+        for(var cIdx = rangeParsed.startCol; cIdx <= rangeParsed.endCol; cIdx++){
+          var cell = sheet[XLSX.utils.encode_cell({ r: rIdx - 1, c: cIdx })];
+          var title = String((cell && (cell.v !== undefined && cell.v !== null ? cell.v : (cell.w || ''))) || '').trim();
+          if(!title || existingTitles.has(norm(title))) continue;
+          existingTitles.add(norm(title));
+          baseSort++;
+          var newNode = { id: 'n_' + stamp + '_' + rIdx + '_' + cIdx, main_type: 'development', level: 4, parent_id: tL3, title: title, subtitle: '', is_published: true, sort_order: baseSort };
+          nodes.push(newNode); addedNodes.push(newNode);
+          addedQs = addedQs.concat(ensureDefaultDevQuestionsForNode(newNode.id, false));
+        }
+      }
+
+      if(addedNodes.length){
+        tSelectNode(4, addedNodes[addedNodes.length - 1].id);
+        showToast('Added ' + addedNodes.length + ' items & auto-generated questions ✓', true);
+        if(sb){
+          await sb.from('nodes').upsert(addedNodes, {onConflict:'id'});
+          if(addedQs.length) await sb.from('questions').upsert(addedQs, {onConflict:'id'});
+        }
+      } else {
+        showToast('No new items found in range', false);
+      }
+    }catch(err){
+      console.error(err);
+      showToast('Error reading Excel file', false);
+    }
+    e.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function tAddNode(level){
+  var inpId=level===1?'tNewL1':level===2?'tNewL2':level===3?'tNewL3':'tNewL4';
+  var val=document.getElementById(inpId).value.trim(); if(!val)return;
+  var pid=level===1?null:level===2?tL1:level===3?tL2:tL3;
+  var newNode={id:'n_'+Date.now(),main_type:tMain,level:level,parent_id:pid,title:val,subtitle:'',is_published:true,sort_order:tChildrenOf(pid,level).length+1};
+  nodes.push(newNode); document.getElementById(inpId).value='';
+  if(tMain==='development' && level===4) ensureDefaultDevQuestionsForNode(newNode.id, false);
+  tSelectNode(level, newNode.id);
+  showToast(tMain==='development' && level===4 ? 'Item & Default Questions Created ✓' : 'Saved ✓', true);
+  if(sb){
+    await sb.from('nodes').upsert(newNode, { onConflict: 'id' });
+    if(tMain==='development' && level===4){
+      var qs = questions.filter(q => q && String(q.node_id) === String(newNode.id));
+      if(qs.length) await sb.from('questions').upsert(qs, { onConflict: 'id' });
+    }
+  }
+}
+async function tEditNode(id, level){
+  var n=nodes.find(x=>x.id===id); if(!n)return;
+  var newName=await profPrompt('Edit name',n.title); if(!newName)return;
+  n.title=newName.trim();
+  if(sb) await sb.from('nodes').update({title:n.title}).eq('id',id);
+  tRenderLevel(level); tUpdateCrumb(); showToast('Updated ✓',true);
+}
+async function tTogglePub(id, level){
+  var n=nodes.find(x=>x.id===id); if(!n)return;
+  n.is_published=!n.is_published;
+  if(sb) await sb.from('nodes').update({is_published:n.is_published}).eq('id',id);
+  tRenderLevel(level);
+}
+async function tMoveNode(id, dir, level){
+  var cur=nodes.find(x=>x.id===id); if(!cur)return;
+  var siblings=tChildrenOf(cur.parent_id, level);
+  var idx=siblings.findIndex(x=>x.id===id), nIdx=idx+dir;
+  if(nIdx<0||nIdx>=siblings.length)return;
+  let temp=siblings[idx]; siblings[idx]=siblings[nIdx]; siblings[nIdx]=temp;
+  for(let i=0;i<siblings.length;i++){
+    let orig=nodes.find(x=>x.id===siblings[i].id);
+    if(orig){
+      orig.sort_order=i+1;
+      if(sb) await sb.from('nodes').update({sort_order:orig.sort_order}).eq('id',orig.id);
+    }
+  }
+  tRenderLevel(level);
+}
+async function tDeleteNode(id, level){
+  if(!await profConfirm('Delete this item?'))return;
+  nodes=nodes.filter(x=>x.id!==id);
+  if(sb) await sb.from('nodes').delete().eq('id',id);
+  tRenderLevel(level); tUpdateCrumb();
+}
+
+function getTargetContextTitles(){
+  var n1=nodes.find(x=>x.id===tL1), n2=nodes.find(x=>x.id===tL2), n3=nodes.find(x=>x.id===tL3), n4=nodes.find(x=>x.id===tL4);
+  return {l1:n1?n1.title:'', l2:n2?n2.title:'', l3:n3?n3.title:'', l4:n4?n4.title:''};
+}
+
+function initTargetUnitsView(){
+  var adSel=document.getElementById('tFilterAdOffice');
+  var opts='';
+  hierarchy.forEach(h=>{
+    if(role==='sub_admin'&&h.id!==mySub)return;
+    opts+='<option value="'+h.id+'">'+h.name+'</option>';
+  });
+  adSel.innerHTML=opts;
+  renderTargetUnitsTable();
+}
+
+function findExistingTargetValue(recId, ctx, subId, divName, cleanOff){
+  var exact = targetRecords.find(r => r.id === recId);
+  if(exact && exact.target_value !== undefined && exact.target_value !== null) return Number(exact.target_value) || 0;
+  var matched = targetRecords.find(r =>
+    norm(r.main_type) === norm(tMain) &&
+    norm(r.level1 || '') === norm(ctx.l1 || '') &&
+    norm(r.level2 || '') === norm(ctx.l2 || '') &&
+    norm(r.level3 || '') === norm(ctx.l3 || '') &&
+    norm(r.item_name || '') === norm(ctx.l4 || '') &&
+    (norm(cleanOffName(r.office)) === norm(cleanOff) || norm(r.division) === norm(divName)) &&
+    (!subId || !r.sub_office_id || norm(r.sub_office_id) === norm(subId))
+  );
+  return (matched && matched.target_value !== undefined && matched.target_value !== null) ? (Number(matched.target_value) || 0) : 0;
+}
+
+function renderTargetUnitsTable(){
+  var adId=document.getElementById('tFilterAdOffice').value;
+  var ctx=getTargetContextTitles();
+  var tbody=document.getElementById('tUnitsTbody');
+  var rowsHtml='', totalSum=0;
+
+  hierarchy.forEach(h=>{
+    if(role==='sub_admin'&&h.id!==mySub)return;
+    if(adId!=='ALL'&&h.id!==adId)return;
+    (h.divisions||[]).forEach(d=>{
+      (d.offices||[]).forEach(off=>{
+        var cleanOff = cleanOffName(off);
+        var recId=[tMain,ctx.l1,ctx.l2,ctx.l3,ctx.l4,h.id,d.name,cleanOff].join('|');
+        var val = findExistingTargetValue(recId, ctx, h.id, d.name, cleanOff);
+        totalSum+=val;
+        rowsHtml+='<tr>'+
+          '<td class="text-xs text-slate-500">'+h.name+'</td>'+
+          '<td class="text-xs font-bold text-indigo-900">'+cleanOff+'</td>'+
+          '<td><input type="number" min="0" step="any" data-target-id="'+recId+'" data-sub-id="'+h.id+'" data-div="'+d.name+'" data-off="'+cleanOff+'" value="'+val+'" oninput="recalcTargetSum()" class="!py-1.5 text-right font-bold"></td>'+
+        '</tr>';
+      });
+    });
+  });
+
+  tbody.innerHTML=rowsHtml||'<tr><td colspan="3" class="text-center py-6 text-slate-400 text-xs">No AI Offices</td></tr>';
+  document.getElementById('tTotalSum').textContent=totalSum.toLocaleString();
+}
+
+function recalcTargetSum(){
+  var sum=0; document.querySelectorAll('[data-target-id]').forEach(inp=>{sum+=(parseFloat(inp.value)||0);});
+  document.getElementById('tTotalSum').textContent=sum.toLocaleString();
+}
+
+async function saveAllTargets(){
+  var ctx=getTargetContextTitles();
+  var inputs=document.querySelectorAll('[data-target-id]');
+  var upserts=[];
+  inputs.forEach(inp=>{
+    var recId=inp.dataset.targetId;
+    var val=parseFloat(inp.value)||0;
+    var rec={id:recId,main_type:tMain,level1:ctx.l1,level2:ctx.l2,level3:ctx.l3||'',item_name:ctx.l4||'',sub_office_id:inp.dataset.subId,division:inp.dataset.div,office:inp.dataset.off,target_value:val};
+    let idx=targetRecords.findIndex(x=>x.id===recId);
+    if(idx>-1)targetRecords[idx]=rec; else targetRecords.push(rec);
+    upserts.push(rec);
+  });
+  if(sb && upserts.length) await sb.from('targets').upsert(upserts,{onConflict:'id'});
+  if(tMain === 'development') await autoSaveDevQuestionsForCurrentSelection();
+  renderDashboard();
+  showToast(tMain === 'development' ? 'Targets & Development Questions Auto-Saved ✓' : 'Targets updated ✓', true);
+}
+function tBackFromUnits(){ if(tMain==='development')tGoto(5); else tGoto(4); }
+
+/* ================= Form Builder ================= */
+function resetWizard(){curMain=null;curL1=null;curL2=null;curL3=null;curSub=null;curItem=null;gotoStep(1);updateCrumb();}
+function updateCrumb(){
+  var parts=[]; if(curMain)parts.push(curMain==='extension'?'🌾 Extension':'🏗️ Development');
+  if(curL1){let n=nodes.find(x=>x.id===curL1);if(n)parts.push(n.title);}
+  if(curL2){let n=nodes.find(x=>x.id===curL2);if(n)parts.push(n.title);}
+  if(curL3){let n=nodes.find(x=>x.id===curL3);if(n)parts.push(n.title);}
+  if(curSub){let ns=nodes.find(x=>x.id===curSub);if(ns)parts.push(ns.title);}
+  if(curItem){let ni=nodes.find(x=>x.id===curItem);if(ni)parts.push(ni.title);}
+  if(curStep===6)parts.push('Questions');
+  document.getElementById('crumb').textContent=parts.length?parts.join(' → '):'Select Extension / Development';
+}
+function gotoStep(s){
+  if(curMain==='extension'&&s===5)s=6;
+  curStep=s; document.querySelectorAll('.wizard-step').forEach(x=>x.classList.remove('active'));
+  var ws=document.getElementById('w'+s); if(ws) ws.classList.add('active');
+  if(s===2)renderL1(); if(s===3)renderL2(); if(s===4)renderL4(); if(s===5)renderItem(); if(s===6)renderQuestions();
+  updateCrumb();
+}
+function pickMain(m){curMain=m;curL1=null;curL2=null;curL3=null;curSub=null;curItem=null;gotoStep(2);}
+function childrenOf(pid,level){
+  nodes = Array.isArray(nodes) ? nodes : [];
+  return nodes.filter(n=>n && n.main_type===curMain&&n.level===level&&(pid?n.parent_id===pid:!n.parent_id)).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+}
+
+function builderSelectCard(n, sel, pickFn, level){
+  var copyFn = level === 1 ? 'wCopyL1' : level === 2 ? 'wCopyL2' : level === 3 ? 'wCopyL3' : 'wCopyL4';
+  var editFn = level === 1 ? 'wEditL1' : level === 2 ? 'wEditL2' : level === 3 ? 'wEditL3' : 'wEditL4';
+  return '<div class="node-card '+(sel?'sel':'')+'" onclick="'+pickFn+'(\''+n.id+'\')">' +
+    '<div class="flex flex-wrap justify-between items-center gap-2">' +
+      '<div class="font-bold">'+n.title+'</div>' +
+      '<div class="flex items-center gap-1.5" onclick="event.stopPropagation()">' +
+        '<button type="button" onclick="wMoveBuilderNode(\''+n.id+'\',-1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↑</button>' +
+        '<button type="button" onclick="wMoveBuilderNode(\''+n.id+'\',1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↓</button>' +
+        '<button type="button" onclick="'+copyFn+'(\''+n.id+'\')" class="btn btn-ghost px-2.5 py-1 text-xs font-bold text-indigo-700 border border-indigo-200 bg-indigo-50">📋 Copy All</button>' +
+        '<button type="button" onclick="'+editFn+'(\''+n.id+'\')" class="btn btn-ghost px-2 py-1 text-xs font-semibold text-slate-700">✏️ Edit</button>' +
+        '<button type="button" onclick="wDeleteBuilderNode(\''+n.id+'\','+level+')" class="btn btn-ghost px-2 py-1 text-xs font-semibold text-red-600">🗑 Delete</button>' +
+        '<span class="text-indigo-600 text-sm font-semibold ml-1">'+(sel?'✓':'Select →')+'</span>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function wMoveBuilderNode(id, dir, level){
+  var cur = nodes.find(x => x.id === id);
+  if(!cur) return;
+  var siblings = childrenOf(cur.parent_id, level);
+  var idx = siblings.findIndex(x => x.id === id);
+  var nIdx = idx + dir;
+  if(nIdx < 0 || nIdx >= siblings.length) return;
+  var temp = siblings[idx]; siblings[idx] = siblings[nIdx]; siblings[nIdx] = temp;
+  for(var i = 0; i < siblings.length; i++){
+    var orig = nodes.find(x => x.id === siblings[i].id);
+    if(orig){
+      orig.sort_order = i + 1;
+      if(sb) await sb.from('nodes').update({ sort_order: orig.sort_order }).eq('id', orig.id);
+    }
+  }
+  if(level === 1) renderL1(); else if(level === 2) renderL2(); else if(level === 3) renderL4(); else if(level === 4) renderItem();
+  showToast('Order updated ✓', true);
+}
+
+function collectDescendantNodeIds(rootId){
+  var ids = [rootId], queue = [rootId];
+  while(queue.length){
+    var pid = queue.shift();
+    nodes.filter(n => n && String(n.parent_id) === String(pid)).forEach(ch => { ids.push(ch.id); queue.push(ch.id); });
+  }
+  return ids;
+}
+
+async function wDeleteBuilderNode(id, level){
+  var n = nodes.find(x => x.id === id); if(!n) return;
+  if(!(await profConfirm('Delete \"' + n.title + '\" and all child nodes?'))) return;
+  var delIds = collectDescendantNodeIds(id);
+  // Remove questions first; verify requests to avoid leaving orphaned question IDs.
+  if(sb){
+    for(var i = 0; i < delIds.length; i++){
+      var qDel = await sb.from('questions').delete().eq('node_id', delIds[i]);
+      if(qDel && qDel.error){ showToast('Question delete failed; nodes kept: '+qDel.error.message, false); return; }
+    }
+    for(var j = 0; j < delIds.length; j++){
+      var nDel = await sb.from('nodes').delete().eq('id', delIds[j]);
+      if(nDel && nDel.error){ showToast('Node delete failed: '+nDel.error.message, false); return; }
+    }
+  }
+  nodes = nodes.filter(x => !delIds.includes(x.id));
+  questions = questions.filter(q => !delIds.includes(q.node_id));
+  if(level === 1 && curL1 === id){ curL1=null; curL2=null; curL3=null; curSub=null; curItem=null; }
+  if(level === 2 && curL2 === id){ curL2=null; curL3=null; curSub=null; curItem=null; }
+  if(level === 3){ if(curSub === id) curSub=null; if(curL3 === id){ curL3=null; curItem=null; } }
+  if(level === 4 && curItem === id){ curItem=null; }
+  if(level === 1) renderL1(); else if(level === 2) renderL2(); else if(level === 3) renderL4(); else if(level === 4) renderItem();
+  updateCrumb(); renderDashboard();
+  showToast('Deleted ✓', true);
+}
+
+async function wEditBuilderNode(id, level){
+  var n = nodes.find(x => x.id === id); if(!n) return;
+  var oldTitle = n.title;
+  var newName = await profPrompt('Edit name', n.title);
+  if(!newName || !newName.trim()) return;
+  newName = newName.trim();
+  n.title = newName;
+  if(sb) await sb.from('nodes').update({ title: newName }).eq('id', id);
+  targetRecords.forEach(tr => {
+    if(norm(tr.main_type) === norm(n.main_type)){
+      if(level === 1 && norm(tr.level1) === norm(oldTitle)) tr.level1 = newName;
+      if(level === 2 && norm(tr.level2) === norm(oldTitle)) tr.level2 = newName;
+      if(level === 3 && norm(tr.level3) === norm(oldTitle)) tr.level3 = newName;
+      if(level === 4 && norm(tr.item_name) === norm(oldTitle)) tr.item_name = newName;
+    }
+  });
+  if(level === 1) renderL1(); else if(level === 2) renderL2(); else if(level === 3) renderL4(); else if(level === 4) renderItem();
+  updateCrumb(); renderDashboard();
+  showToast('Updated ✓', true);
+}
+
+async function wCopyBuilderNode(id, level){
+  var srcNode = nodes.find(x => x.id === id); if(!srcNode) return;
+  var newTitle = await profPrompt('New name to copy "' + srcNode.title + '" and sub-items:', srcNode.title + ' (Copy)');
+  if(!newTitle || !newTitle.trim()) return;
+  var bundle = executeDeepCopyForNode(srcNode, level, newTitle.trim(), { l1: curL1, l2: curL2, l3: (curMain === 'extension' ? curSub : curL3) });
+  if(!bundle) return;
+  if(level === 1){ curL1 = bundle.clonedNode.id; curL2 = null; curL3 = null; curSub = null; curItem = null; renderL1(); }
+  else if(level === 2){ curL2 = bundle.clonedNode.id; curL3 = null; curSub = null; curItem = null; renderL2(); }
+  else if(level === 3){ if(curMain === 'extension') curSub = bundle.clonedNode.id; else { curL3 = bundle.clonedNode.id; curItem = null; } renderL4(); }
+  else if(level === 4){ curItem = bundle.clonedNode.id; renderItem(); }
+  await persistCopiedBundle(bundle);
+  updateCrumb(); renderDashboard();
+  showToast('Copied "' + newTitle.trim() + '" ✓', true);
+}
+
+function wCopyL1(id){ return wCopyBuilderNode(id, 1); }
+function wCopyL2(id){ return wCopyBuilderNode(id, 2); }
+function wCopyL3(id){ return wCopyBuilderNode(id, 3); }
+function wCopyL4(id){ return wCopyBuilderNode(id, 4); }
+function wEditL1(id){ return wEditBuilderNode(id, 1); }
+function wEditL2(id){ return wEditBuilderNode(id, 2); }
+function wEditL3(id){ return wEditBuilderNode(id, 3); }
+function wEditL4(id){ return wEditBuilderNode(id, 4); }
+
+function renderL1(){
+  document.getElementById('w2Title').textContent=curMain==='extension'?'Step 2 — Season':'Step 2 — Year';
+  document.getElementById('l1List').innerHTML=childrenOf(null,1).map(n=>builderSelectCard(n,curL1===n.id,'pickL1',1)).join('')||'<div class="text-xs text-slate-400">Add items in Target Setup</div>';
+  document.getElementById('w2Next').disabled=!curL1;
+}
+function pickL1(id){curL1=id;curL2=null;curL3=null;curSub=null;curItem=null;renderL1();}
+function renderL2(){
+  document.getElementById('w3Title').textContent='Step 3 — Program';
+  document.getElementById('l2List').innerHTML=childrenOf(curL1,2).map(n=>builderSelectCard(n,curL2===n.id,'pickL2',2)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+  document.getElementById('w3Next').disabled=!curL2;
+}
+function pickL2(id){curL2=id;curL3=null;curSub=null;curItem=null;renderL2();}
+function w3Next(){gotoStep(4);}
+function w4Next(){if(curMain==='development')gotoStep(5);else {if(!curSub){showToast('Please select a Sub Program first',false);return;}gotoStep(6);}}
+function backFromQ(){if(curMain==='development')gotoStep(5);else gotoStep(4);}
+function renderL4(){
+  let isExt=curMain==='extension';
+  document.getElementById('l3List').innerHTML=childrenOf(curL2,3).map(n=>builderSelectCard(n,(isExt?curSub:curL3)===n.id,isExt?'pickSub':'pickL3',3)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+  document.getElementById('w4Next').disabled=isExt?!curSub:!curL3;
+}
+function pickL3(id){curL3=id;curItem=null;renderL4();}
+function pickSub(id){curSub=id;renderL4();}
+function renderItem(){
+  let list=curL3?nodes.filter(n=>n && n.main_type==='development'&&n.level===4&&n.parent_id===curL3):[];
+  document.getElementById('itemList').innerHTML=list.map(n=>builderSelectCard(n,curItem===n.id,'pickItem',4)).join('')||'<div class="text-xs text-slate-400">No items</div>';
+}
+function pickItem(id){
+  curItem=id;
+  if(curMain==='development' && id) ensureDefaultDevQuestionsForNode(id, true);
+  renderItem();
+}
+
+function leafId(){
+  // Never save Development item questions against a parent when no item is selected.
+  if(curMain==='development') return curItem || null;
+  return curSub || null;
+}
+var curOptions=[];
+function onQType(){document.getElementById('optWrap').classList.toggle('hidden',['multiple_choice','checkbox','dropdown'].indexOf(document.getElementById('qType').value)===-1);}
+function addOption(){let v=document.getElementById('optInput').value.trim();if(!v)return;curOptions.push(v);document.getElementById('optInput').value='';renderOpts();}
+function renderOpts(){document.getElementById('optList').innerHTML=curOptions.map((o,i)=>'<div class="flex gap-2"><input value="'+o+'" onchange="curOptions['+i+']=this.value"><button type="button" onclick="curOptions.splice('+i+',1);renderOpts()" class="btn btn-ghost px-2">✕</button></div>').join('');}
+function resetQ(){document.getElementById('qForm').reset();document.getElementById('qId').value='';curOptions=[];renderOpts();onQType();}
+
+function renderQuestionPreviewControl(q){
+  var opts = Array.isArray(q.options) ? q.options : [];
+  if(q.question_type === 'multiple_choice'){
+    return '<div class="space-y-1.5 mt-1">' + (opts.length ? opts.map(o => '<label class="flex items-center gap-2 text-xs text-slate-700"><input type="radio" name="prev_'+q.id+'" class="w-auto"><span>'+o+'</span></label>').join('') : '<div class="text-xs text-slate-400">No Options</div>') + '</div>';
+  }
+  if(q.question_type === 'checkbox'){
+    return '<div class="space-y-1.5 mt-1">' + (opts.length ? opts.map(o => '<label class="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" class="w-auto"><span>'+o+'</span></label>').join('') : '<div class="text-xs text-slate-400">No Options</div>') + '</div>';
+  }
+  if(q.question_type === 'dropdown'){
+    return '<select class="mt-1 bg-white text-xs"><option value="">-- Select --</option>' + opts.map(o => '<option>'+o+'</option>').join('') + '</select>';
+  }
+  if(q.question_type === 'yes_no'){
+    return '<div class="flex gap-4 mt-1 text-xs"><label class="flex items-center gap-1.5"><input type="radio" name="prev_'+q.id+'" class="w-auto">Yes</label><label class="flex items-center gap-1.5"><input type="radio" name="prev_'+q.id+'" class="w-auto">No</label></div>';
+  }
+  if(q.question_type === 'scale'){
+    return '<div class="flex gap-3 mt-1 text-xs">' + [1,2,3,4,5].map(n => '<label class="flex items-center gap-1"><input type="radio" name="prev_'+q.id+'" class="w-auto">'+n+'</label>').join('') + '</div>';
+  }
+  if(q.question_type === 'number') return '<input type="number" disabled placeholder="0" class="mt-1 bg-white text-xs">';
+  if(q.question_type === 'date') return '<input type="date" disabled class="mt-1 bg-white text-xs">';
+  if(q.question_type === 'paragraph') return '<textarea rows="2" disabled placeholder="Paragraph answer..." class="mt-1 bg-white text-xs"></textarea>';
+  return '<input type="text" disabled placeholder="Short answer..." class="mt-1 bg-white text-xs">';
+}
+
+async function copyQuestionItem(id){
+  var q = questions.find(x => x.id === id); if(!q) return;
+  var newText = await profPrompt('Copy and edit question:', q.question_text + ' (Copy)');
+  if(!newText || !newText.trim()) return;
+  var cq = Object.assign({}, q, {
+    id: 'q' + Date.now(),
+    question_text: newText.trim(),
+    options: Array.isArray(q.options) ? q.options.slice() : [],
+    order_index: questions.filter(x => x.node_id === q.node_id).length + 1
+  });
+  questions.push(cq);
+  if(sb) await sb.from('questions').upsert(cq, { onConflict: 'id' });
+  renderQuestions();
+  showToast('Question copied ✓', true);
+}
+
+async function syncCurrentQuestionsToSubSiblings(){
+  var lid = leafId();
+  if(!lid || !curL3) return showToast('Select a Sub Program & Item first', false);
+  var srcQs = questions.filter(q => q && String(q.node_id) === String(lid)).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  if(!srcQs.length) return showToast('No questions in current node to sync', false);
+
+  var siblingItems = nodes.filter(n => n && n.main_type === 'development' && n.level === 4 && String(n.parent_id) === String(curL3) && String(n.id) !== String(lid));
+  var targetIds = [curL3, ...siblingItems.map(x => x.id)];
+  var toUpsert = [];
+
+  targetIds.forEach((tid, tIdx) => {
+    srcQs.forEach((sq, sIdx) => {
+      var existing = questions.find(q => q && String(q.node_id) === String(tid) && norm(q.question_text) === norm(sq.question_text));
+      var qObj = {
+        id: existing ? existing.id : ('q_sync_' + tid + '_' + (sIdx + 1) + '_' + Date.now() + '_' + tIdx),
+        node_id: tid,
+        question_text: sq.question_text,
+        question_type: sq.question_type,
+        options: Array.isArray(sq.options) ? sq.options.slice() : [],
+        is_required: sq.is_required !== false,
+        order_index: sq.order_index || (sIdx + 1)
+      };
+      var idxInArr = questions.findIndex(x => String(x.id) === String(qObj.id));
+      if(idxInArr > -1) questions[idxInArr] = qObj;
+      else questions.push(qObj);
+      toUpsert.push(qObj);
+    });
+  });
+
+  if(sb && toUpsert.length){
+    var res = await sb.from('questions').upsert(toUpsert, { onConflict: 'id' });
+    if(res && res.error) return showToast('Supabase Sync Error: ' + res.error.message, false);
+  }
+  renderDashboard();
+  showToast('Synced ' + srcQs.length + ' questions to ' + targetIds.length + ' nodes ✓', true);
+}
+
+function renderQuestions(){
+  var lid=leafId(); if(!lid)return;
+  questions = Array.isArray(questions) ? questions : [];
+  if(curMain === 'development') ensureDefaultDevQuestionsForNode(lid, true);
+  var noteEl = document.getElementById('devMultiItemNote');
+  if(noteEl) noteEl.classList.toggle('hidden', curMain !== 'development');
+
+  var qs=questions.filter(q=>q && String(q.node_id)===String(lid)).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  document.getElementById('qCount').textContent=qs.length;
+  document.getElementById('qList').innerHTML=qs.map((q,i)=>'<div class="rounded-xl border p-3 bg-white flex flex-wrap justify-between gap-2"><div><b>'+(i+1)+'. '+q.question_text+'</b><div class="text-xs text-slate-400">'+q.question_type+'</div></div><div class="flex flex-wrap gap-1"><button type="button" onclick="moveQ(\''+q.id+'\',-1)" class="btn btn-ghost px-2 py-1 text-xs">↑</button><button type="button" onclick="moveQ(\''+q.id+'\',1)" class="btn btn-ghost px-2 py-1 text-xs">↓</button><button type="button" onclick="copyQuestionItem(\''+q.id+'\')" class="btn btn-ghost px-2 py-1 text-xs text-indigo-700">Copy</button><button type="button" onclick="editQ(\''+q.id+'\')" class="btn btn-ghost px-2 py-1 text-xs">Edit</button><button type="button" onclick="delQ(\''+q.id+'\')" class="text-red-500 text-xs px-2">Delete</button></div></div>').join('')||'<div class="text-xs text-slate-400">No questions</div>';
+
+  var prevEl = document.getElementById('qPreview');
+  if(prevEl){
+    prevEl.innerHTML = qs.length ? qs.map((q, i) =>
+      '<div class="rounded-xl border bg-white p-3">' +
+        '<div class="text-xs font-bold text-slate-800">' + (i+1) + '. ' + q.question_text + (q.is_required ? ' <span class="text-red-500">*</span>' : '') + '</div>' +
+        renderQuestionPreviewControl(q) +
+      '</div>'
+    ).join('') : '<div class="text-xs text-slate-400">No questions to display</div>';
+  }
+}
+async function moveQ(id, dir){
+  var lid=leafId(); var qs=questions.filter(q=>q && String(q.node_id)===String(lid)).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  let idx=qs.findIndex(q=>q.id===id), nIdx=idx+dir; if(nIdx<0||nIdx>=qs.length)return;
+  let t=qs[idx]; qs[idx]=qs[nIdx]; qs[nIdx]=t;
+  for(let i=0;i<qs.length;i++){ let q=questions.find(x=>x.id===qs[i].id); if(q){ q.order_index=i+1; if(sb) await sb.from('questions').update({order_index:q.order_index}).eq('id',q.id); } }
+  renderQuestions();
+}
+document.getElementById('qForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var lid=leafId(); if(!lid)return showToast('Please select a node first', false);
+  var btn = document.getElementById('saveQBtn');
+  if(btn) btn.disabled = true;
+  try{
+    var id=document.getElementById('qId').value;
+    var existingQ = id ? questions.find(q=>q.id===id) : null;
+    var typeVal = document.getElementById('qType').value;
+    var pendingOpt = document.getElementById('optInput') ? document.getElementById('optInput').value.trim() : '';
+    if(pendingOpt && ['multiple_choice','checkbox','dropdown'].includes(typeVal)){
+      curOptions.push(pendingOpt);
+      document.getElementById('optInput').value = '';
+    }
+    var payload={
+      id:id||'q_'+lid+'_'+Date.now(),
+      node_id:lid,
+      question_text:document.getElementById('qText').value.trim(),
+      question_type:typeVal,
+      options:Array.isArray(curOptions)?curOptions.slice():[],
+      is_required:document.getElementById('qReq').value==='1',
+      order_index:existingQ?existingQ.order_index:questions.filter(q=>q && String(q.node_id)===String(lid)).length+1
+    };
+    if(id){let idx=questions.findIndex(q=>q.id===id);if(idx>-1)questions[idx]=payload;else questions.push(payload);}else questions.push(payload);
+    if(sb){
+      var upRes = await sb.from('questions').upsert(payload, { onConflict: 'id' }).select();
+      if(upRes && upRes.error){
+        showToast('Supabase Error: ' + upRes.error.message, false);
+      } else if(upRes && Array.isArray(upRes.data) && upRes.data[0]){
+        var idx2 = questions.findIndex(q=>q.id===payload.id);
+        if(idx2>-1) questions[idx2] = Object.assign({}, payload, upRes.data[0]);
+      }
+    }
+    resetQ();
+    renderQuestions();
+    renderDashboard();
+    showToast('Question Saved & Reloaded ✓',true);
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+});
+function editQ(id){var q=questions.find(x=>x.id===id);if(!q)return;document.getElementById('qId').value=q.id;document.getElementById('qText').value=q.question_text;document.getElementById('qType').value=q.question_type;document.getElementById('qReq').value=q.is_required?'1':'0';curOptions=Array.isArray(q.options)?q.options.slice():[];renderOpts();onQType();}
+async function delQ(id){if(!await profConfirm('Delete this question?'))return;questions=questions.filter(x=>x.id!==id);if(sb) await sb.from('questions').delete().eq('id',id);renderQuestions();renderDashboard();}
+async function loadDevTemplate(){
+  var lid=leafId(); if(!lid)return;
+  var oldQs = questions.filter(q => q && String(q.node_id) === String(lid));
+  questions = questions.filter(q => !(q && String(q.node_id) === String(lid)));
+  if(sb && oldQs.length){
+    await sb.from('questions').delete().eq('node_id', lid);
+  }
+  var batch = [];
+  DEV_DEFAULT_QUESTIONS.forEach((t,i)=>{
+    let q={
+      id:'q_dev_'+lid+'_'+(i+1),
+      node_id:lid,
+      question_text:t.text,
+      question_type:t.type,
+      options:(t.options||[]).slice(),
+      is_required:t.required!==false,
+      order_index:i+1
+    };
+    questions.push(q);
+    batch.push(q);
+  });
+  if(sb && batch.length) await sb.from('questions').upsert(batch, { onConflict: 'id' });
+  renderQuestions();
+  renderDashboard();
+  showToast('Development Default Questions (7) Loaded ✓', true);
+}
+function loadExtTemplate(){var lid=leafId();if(!lid)return;[['Cultivated Extent','number',[]]].forEach((t,i)=>{let q={id:'q'+Date.now()+i,node_id:lid,question_text:t[0],question_type:t[1],options:t[2],is_required:true,order_index:questions.filter(x=>x.node_id===lid).length+1};questions.push(q);if(sb)sb.from('questions').upsert(q, { onConflict: 'id' });});renderQuestions();}
+async function finishWizard(){ renderDashboard(); goNav('dashboard'); }
+
+/* ================= Item Price List ================= */
+var plChartInst=null;
+function initPriceList(){
+  let devYears=(nodes||[]).filter(n=>n && n.main_type==='development'&&n.level===1);
+  document.getElementById('plYear').innerHTML=devYears.map(y=>'<option value="'+y.id+'">'+y.title+'</option>').join('')||'<option value="">Year</option>';
+  onPlYearChange();
+}
+function onPlYearChange(){
+  let yId=document.getElementById('plYear').value;
+  document.getElementById('plProgram').innerHTML=(nodes||[]).filter(n=>n && n.main_type==='development'&&n.level===2&&n.parent_id===yId).map(p=>'<option value="'+p.id+'">'+p.title+'</option>').join('');
+  onPlProgChange();
+}
+function onPlProgChange(){
+  let pId=document.getElementById('plProgram').value;
+  document.getElementById('plSubProgram').innerHTML=(nodes||[]).filter(n=>n && n.main_type==='development'&&n.level===3&&n.parent_id===pId).map(s=>'<option value="'+s.id+'">'+s.title+'</option>').join('');
+  onPlSubProgChange();
+}
+function onPlSubProgChange(){
+  let spId=document.getElementById('plSubProgram').value;
+  let items=(nodes||[]).filter(n=>n && n.main_type==='development'&&n.level===4&&n.parent_id===spId);
+  document.getElementById('plItemSelect').innerHTML=items.map(it=>'<option value="'+it.title+'">'+it.title+'</option>').join('')+'<option value="__CUSTOM__">+ Custom Item...</option>';
+  onPlItemSelectChange(); renderPlTableAndChart();
+}
+function onPlItemSelectChange(){
+  let val=document.getElementById('plItemSelect').value;
+  document.getElementById('plItemCustom').classList.toggle('hidden',val!=='__CUSTOM__');
+}
+function calcPlPrices(){
+  let unit=parseFloat(document.getElementById('plUnitPrice').value)||0;
+  let sub=document.getElementById('plSubsidy').value;
+  let f=sub==='75%'?0.75:sub==='50%'?0.50:sub==='25%'?0.25:0;
+  document.getElementById('plFarmerPrice').value=(unit*f).toFixed(2);
+  document.getElementById('plGovPrice').value=(unit-(unit*f)).toFixed(2);
+}
+function resetPlForm(){document.getElementById('plForm').reset();document.getElementById('plEditId').value='';}
+document.getElementById('plForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  let editId=document.getElementById('plEditId').value;
+  let yTitle=document.getElementById('plYear').selectedOptions[0]?.text||'';
+  let pTitle=document.getElementById('plProgram').selectedOptions[0]?.text||'';
+  let spTitle=document.getElementById('plSubProgram').selectedOptions[0]?.text||'';
+  let itVal=document.getElementById('plItemSelect').value;
+  let itemName=itVal==='__CUSTOM__'?document.getElementById('plItemCustom').value.trim():itVal;
+  let unitPrice=parseFloat(document.getElementById('plUnitPrice').value)||0;
+  let sub=document.getElementById('plSubsidy').value;
+  let f=sub==='75%'?0.75:sub==='50%'?0.50:sub==='25%'?0.25:0;
+  let rec={id:editId||('pl_'+Date.now()),year:yTitle,program:pTitle,sub_program:spTitle,item_name:itemName,subsidy:sub,unit_price:unitPrice,farmer_price:parseFloat((unitPrice*f).toFixed(2)),gov_price:parseFloat((unitPrice-(unitPrice*f)).toFixed(2))};
+  if(editId){let idx=plItems.findIndex(x=>x.id===editId);if(idx>-1)plItems[idx]=rec;}else plItems.push(rec);
+  if(sb) await sb.from('item_prices').upsert(rec,{onConflict:'id'});
+  resetPlForm(); renderPlTableAndChart(); showToast('Saved ✓',true);
+});
+async function delPlItem(id){
+  if(!await profConfirm('Delete this price item?'))return;
+  plItems=plItems.filter(x=>x.id!==id);
+  if(sb) await sb.from('item_prices').delete().eq('id',id);
+  renderPlTableAndChart();
+}
+function renderPlTableAndChart(){
+  plItems = Array.isArray(plItems) ? plItems : [];
+  document.getElementById('plTableBody').innerHTML=plItems.map(x=>'<tr><td class="text-xs"><b>'+x.year+'</b><br>'+x.program+'</td><td class="text-xs"><b>'+x.item_name+'</b></td><td class="text-xs">'+x.subsidy+'</td><td class="text-xs">Rs.'+x.unit_price+'</td><td class="text-xs font-bold text-emerald-600">Rs.'+x.gov_price+'</td><td class="text-xs font-bold text-indigo-600">Rs.'+x.farmer_price+'</td><td><button onclick="delPlItem(\''+x.id+'\')" class="text-red-500 text-xs">Del</button></td></tr>').join('')||'<tr><td colspan="7" class="text-center text-xs text-slate-400">No data</td></tr>';
+  let ctx=document.getElementById('plChartCanvas');
+  if(!ctx||typeof Chart==='undefined')return;
+  if(plChartInst)plChartInst.destroy();
+  plChartInst=new Chart(ctx,{type:'bar',data:{labels:plItems.map(x=>x.item_name),datasets:[{label:'Gov Price',data:plItems.map(x=>x.gov_price),backgroundColor:'#059669'},{label:'Farmer Price',data:plItems.map(x=>x.farmer_price),backgroundColor:'#4f46e5'}]}});
+}
+function downloadPriceExcel(){
+  if(!plItems.length)return;
+  let ws=XLSX.utils.json_to_sheet(plItems), wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Prices'); XLSX.writeFile(wb,'Prices.xlsx');
+}
+function importPriceExcel(e){
+  let file=e.target.files[0]; if(!file)return;
+  let reader=new FileReader();
+  reader.onload=async function(evt){
+    let data=new Uint8Array(evt.target.result), wb=XLSX.read(data,{type:'array'});
+    let json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    for(let i=0;i<json.length;i++){
+      let r=json[i];
+      let rec={id:'pl_'+Date.now()+'_'+i,year:String(r.Year||'2026'),program:String(r.Program||'PSDG'),sub_program:String(r['Sub Program']||''),item_name:String(r['Item Name']||''),subsidy:String(r.Subsidy||'50%'),unit_price:Number(r['Unit Price']||0),farmer_price:0,gov_price:0};
+      let f=rec.subsidy==='75%'?0.75:rec.subsidy==='50%'?0.50:rec.subsidy==='25%'?0.25:0;
+      rec.farmer_price=rec.unit_price*f; rec.gov_price=rec.unit_price-rec.farmer_price;
+      plItems.push(rec);
+      if(sb) await sb.from('item_prices').upsert(rec, { onConflict: 'id' });
+    }
+    renderPlTableAndChart(); showToast('Imported ✓',true);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ================= PIV APPROVAL (SUPABASE ONLY) ================= */
+function getAllPivRecords(){
+  return (Array.isArray(pivRecords) ? pivRecords : []).slice().sort((a,b) => String(b.created_at||'').localeCompare(String(a.created_at||'')));
+}
+
+function isAdApprovedForDd(r){
+  var st = norm(r.ad_approval_status);
+  return st === 'approved' || st === 'submitted_to_dd' || Boolean(r.dd_office_submit_date);
+}
+
+function isDdApproved(r){
+  return norm(r.dd_approval_status) === 'approved' || norm(r.main_admin_status) === 'approved';
+}
+
+function setSelectKeep(selId, arr, defLbl){
+  var el = document.getElementById(selId);
+  if(!el) return;
+  var prev = el.value;
+  el.innerHTML = '<option value="">' + defLbl + '</option>' + arr.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+  if(arr.includes(prev)) el.value = prev;
+  else el.value = '';
+}
+
+function populateAdminPivFilters(){
+  var list = getAllPivRecords();
+  setSelectKeep('admPivFilterAd', [...new Set(list.map(r => r.ad_office || resolveAdOfficeForDivision(r.division || r.office)).filter(Boolean))], 'All AD Offices');
+  setSelectKeep('admPivFilterYear', [...new Set(list.map(r => r.year).filter(Boolean))], 'All Years');
+  setSelectKeep('admPivFilterProg', [...new Set(list.map(r => r.main_program).filter(Boolean))], 'All Main Programs');
+}
+
+function renderAdminPivTable(){
+  var list = getAllPivRecords();
+  populateAdminPivFilters();
+
+  var fAd = (document.getElementById('admPivFilterAd') || {}).value || '';
+  var fYr = (document.getElementById('admPivFilterYear') || {}).value || '';
+  var fPr = (document.getElementById('admPivFilterProg') || {}).value || '';
+  var fSt = (document.getElementById('admPivFilterStatus') || {}).value || '';
+
+  var filtered = list.filter(r => {
+    var adName = r.ad_office || resolveAdOfficeForDivision(r.division || r.office) || '';
+    var ddDone = isDdApproved(r);
+    return (!fAd || norm(adName) === norm(fAd)) &&
+           (!fYr || norm(r.year) === norm(fYr)) &&
+           (!fPr || norm(r.main_program) === norm(fPr)) &&
+           (!fSt || (fSt === 'dd_approved' && ddDone) || (fSt === 'dd_pending' && !ddDone));
+  });
+
+  var tbody = document.getElementById('adminPivTbody');
+  if(!tbody) return;
+  if(!filtered.length){
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-6 text-slate-400 text-xs">No PIV records in Supabase</td></tr>';
+    return;
+  }
+
+  var todayStr = new Date().toISOString().slice(0,10);
+
+  tbody.innerHTML = filtered.map(r => {
+    var adDone = isAdApprovedForDd(r);
+    var ddDone = isDdApproved(r);
+    var adName = r.ad_office || resolveAdOfficeForDivision(r.division || r.office) || '-';
+
+    var adBadge = adDone
+      ? '<span class="px-2 py-1 rounded-full text-[11px] font-bold bg-blue-600 text-white whitespace-nowrap">AD Approved</span>'
+      : '<span class="px-2 py-1 rounded-full text-[11px] font-bold bg-slate-200 text-slate-700 whitespace-nowrap">AD Pending</span>';
+
+    var ddBadge = ddDone
+      ? '<span class="px-2 py-1 rounded-full text-[11px] font-bold bg-emerald-600 text-white whitespace-nowrap">DD Approved</span>'
+      : (adDone
+          ? '<span class="px-2 py-1 rounded-full text-[11px] font-bold bg-amber-500 text-white whitespace-nowrap">DD Office Pending</span>'
+          : '<span class="px-2 py-1 rounded-full text-[11px] font-bold bg-red-600 text-white whitespace-nowrap">Waiting AD</span>');
+
+    var dateVal = r.dd_approval_date || todayStr;
+
+    return '<tr>' +
+      '<td class="font-bold text-indigo-950 whitespace-nowrap">' + (r.auto_unit_no || '-') + '</td>' +
+      '<td class="text-xs"><b>' + cleanOffName(r.division || r.office || '-') + '</b><div class="text-[11px] text-slate-500">' + adName + '</div></td>' +
+      '<td class="text-xs"><b>' + (r.year || '-') + '</b><br>' + (r.main_program || '-') + '</td>' +
+      '<td class="text-xs">' + (r.sub_program || '-') + '<br><b class="text-emerald-900">' + (r.item_name || '-') + '</b></td>' +
+      '<td class="text-xs">Units: <b>' + parseNum(r.no_of_units) + '</b><br><b class="text-emerald-700">Rs. ' + parseNum(r.payment_amount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + '</b></td>' +
+      '<td class="text-xs whitespace-nowrap">Bank: ' + (r.banked_date || '-') + '<br>PIV: ' + (r.piv_submit_date || '-') + '</td>' +
+      '<td class="text-center">' + adBadge + '</td>' +
+      '<td class="text-center">' + ddBadge + '</td>' +
+      '<td class="text-center whitespace-nowrap"><input type="date" id="ddAppDate_' + r.id + '" value="' + dateVal + '" class="!w-36 text-xs bg-white"></td>' +
+      '<td class="text-center whitespace-nowrap"><button onclick="ddApprovePivRecord(\'' + r.id + '\')" class="btn btn-success px-3 py-1.5 text-xs font-bold">' + (ddDone ? 'Update Date' : 'DD Approve') + '</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function ddApprovePivRecord(id){
+  var rec = pivRecords.find(x => String(x.id) === String(id));
+  if(!rec) return;
+
+  var dateEl = document.getElementById('ddAppDate_' + id);
+  var appDate = dateEl ? dateEl.value : '';
+  if(!appDate) return showToast('Please select DD Approval Date', false);
+
+  var approvedBy = localStorage.getItem('user') || 'DD Office';
+  var approvedAt = new Date().toISOString();
+
+  var updatePayload = {
+    dd_approval_status: 'Approved',
+    main_admin_status: 'Approved',
+    dd_approval_date: appDate,
+    dd_approved_by: approvedBy,
+    dd_approved_at: approvedAt,
+    updated_at: approvedAt
+  };
+
+  if(sb){
+    var res = await sb.from('piv_submissions').update(updatePayload).eq('id', rec.id);
+    if(res.error){
+      return showToast('Supabase Update Error: ' + res.error.message, false);
+    }
+  }
+
+  Object.assign(rec, updatePayload);
+  renderAdminPivTable();
+  showToast('DD Office Approved & Date (' + appDate + ') Saved to Supabase ✓', true);
+}
+
+/* ================= Data View (Ordered Columns + Proper Question Titles + Per-Item Row) ================= */
+const CAT_PALETTE = [
+  'bg-indigo-100 text-indigo-900 border-indigo-300',
+  'bg-amber-100 text-amber-900 border-amber-300',
+  'bg-rose-100 text-rose-900 border-rose-300',
+  'bg-cyan-100 text-cyan-900 border-cyan-300',
+  'bg-violet-100 text-violet-900 border-violet-300',
+  'bg-lime-100 text-lime-900 border-lime-300',
+  'bg-orange-100 text-orange-900 border-orange-300',
+  'bg-teal-100 text-teal-900 border-teal-300'
+];
+
+function getCategoryColorClass(catName){
+  var k = norm(catName || 'other');
+  var hash = 0;
+  for(var i = 0; i < k.length; i++) hash = (hash * 31 + k.charCodeAt(i)) >>> 0;
+  return CAT_PALETTE[hash % CAT_PALETTE.length];
+}
+
+function resolveAdOfficeForDivision(divName){
+  var dn = norm(cleanOffName(divName));
+  if(!dn) return '';
+  for(var i = 0; i < hierarchy.length; i++){
+    var h = hierarchy[i];
+    var divs = h.divisions || [];
+    for(var j = 0; j < divs.length; j++){
+      var d = divs[j];
+      if(norm(d.name) === dn) return h.name;
+      if((d.offices || []).some(o => norm(cleanOffName(o)) === dn)) return h.name;
+    }
+  }
+  return '';
+}
+
+function getAllAiOfficesByAdName(adName){
+  var set = new Set();
+  hierarchy.forEach(h => {
+    if(!adName || norm(h.name) === norm(adName)){
+      (h.divisions || []).forEach(d => {
+        if(d.name) set.add(d.name);
+        (d.offices || []).forEach(o => { if(cleanOffName(o)) set.add(cleanOffName(o)); });
+      });
+    }
+  });
+  return Array.from(set);
+}
+
+function setSelectPreserve(selId, vals, defLabel){
+  var el = document.getElementById(selId);
+  if(!el) return;
+  var prev = el.value;
+  el.innerHTML = '<option value="">' + defLabel + '</option>' + vals.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+  if(vals.includes(prev)) el.value = prev;
+  else el.value = '';
+}
+
+function isNonEmptyCellValue(v){
+  if(v === undefined || v === null) return false;
+  if(Array.isArray(v)) return v.some(x => x !== undefined && x !== null && String(x).trim() !== '' && String(x).trim() !== '-');
+  var s = String(v).trim();
+  return s !== '' && s !== '-';
+}
+
+function formatCellVal(v){
+  if(v === undefined || v === null || v === '') return '-';
+  if(Array.isArray(v)){
+    var cleanArr = v.filter(x => x !== undefined && x !== null && String(x).trim() !== '');
+    return cleanArr.length ? cleanArr.join(', ') : '-';
+  }
+  return String(v);
+}
+
+var qTextByIdMap = null;
+var qTextByOrderMap = null;
+
+function buildQuestionLookupMaps(){
+  var byId = new Map();
+  var byOrder = new Map();
+  (questions || []).forEach(q => {
+    if(!q) return;
+    var label = String(q.question_text || '').trim();
+    if(!label) return;
+    if(q.id !== undefined && q.id !== null) byId.set(String(q.id), label);
+    if(q.order_index !== undefined && q.order_index !== null){
+      var ordKey = String(q.order_index);
+      if(!byOrder.has(ordKey)) byOrder.set(ordKey, label);
+    }
+  });
+  DEV_DEFAULT_QUESTIONS.forEach((tpl, idx) => {
+    var ordKey = String(idx + 1);
+    if(!byOrder.has(ordKey) && tpl && tpl.text) byOrder.set(ordKey, tpl.text);
+  });
+  qTextByIdMap = byId;
+  qTextByOrderMap = byOrder;
+}
+
+function resolveQuestionColumnTitle(rawKey, isDev){
+  if(!qTextByIdMap || !qTextByOrderMap) buildQuestionLookupMaps();
+  var k = String(rawKey || '').trim();
+  if(!k) return '';
+  if(norm(k) === 'tpl_contrib' || norm(k).startsWith('__item_contrib_')) return 'ගොවි දායකත්වය';
+  if(qTextByIdMap.has(k)) return qTextByIdMap.get(k);
+
+  var tplMatch = k.match(/^tpl_def_(\d+)$/i);
+  if(tplMatch){
+    var tIdx = parseInt(tplMatch[1], 10);
+    if(DEV_DEFAULT_QUESTIONS[tIdx]) return DEV_DEFAULT_QUESTIONS[tIdx].text;
+  }
+
+  if(/^q(_[a-zA-Z0-9]+)+$/i.test(k)){
+    var tailMatch = k.match(/_(\d+)$/);
+    if(tailMatch){
+      var numVal = parseInt(tailMatch[1], 10);
+      if(isDev && DEV_DEFAULT_QUESTIONS[numVal - 1]) return DEV_DEFAULT_QUESTIONS[numVal - 1].text;
+      if(qTextByOrderMap.has(String(numVal))) return qTextByOrderMap.get(String(numVal));
+    }
+    return '';
+  }
+  return k;
+}
+
+function expandDevelopmentResponseRows(r){
+  var ans = (r && r.answers && typeof r.answers === 'object') ? r.answers : {};
+  var selectedItems = Array.isArray(ans.__selected_items) ? ans.__selected_items.filter(Boolean) : [];
+  if(!selectedItems.length && ans.__item_name){
+    selectedItems = [ans.__item_name];
+  }
+  if(selectedItems.length <= 1){
+    var singleItem = selectedItems[0] || ans.__item_name || '-';
+    var mergedSingle = Object.assign({}, ans, { __item_name: singleItem });
+    if(ans.__item_specific && ans.__item_specific[singleItem]){
+      Object.keys(ans.__item_specific[singleItem]).forEach(sk => { mergedSingle[sk] = ans.__item_specific[singleItem][sk]; });
+    }
+    return [{
+      rawRecord: r,
+      itemName: singleItem,
+      answers: mergedSingle
+    }];
+  }
+  return selectedItems.map(itName => {
+    var itemSpecificMap = (ans.__item_specific && typeof ans.__item_specific === 'object') ? ans.__item_specific[itName] : null;
+    var itemQtyMap = (ans.__item_quantities && typeof ans.__item_quantities === 'object') ? ans.__item_quantities[itName] : null;
+    var mergedAns = {};
+    var skipCommon = new Set(['ගොවි දායකත්වය']);
+    Object.keys(ans).forEach(k => {
+      if(k === '__item_specific') return;
+      var qTitle = resolveQuestionColumnTitle(k, true);
+      if(qTitle && skipCommon.has(qTitle)) return;
+      mergedAns[k] = ans[k];
+    });
+    mergedAns.__item_name = itName;
+    if(itemQtyMap !== undefined && itemQtyMap !== null && itemQtyMap !== ''){
+      mergedAns.__progress_qty = itemQtyMap;
+    }
+    if(itemSpecificMap && typeof itemSpecificMap === 'object'){
+      Object.keys(itemSpecificMap).forEach(sk => { mergedAns[sk] = itemSpecificMap[sk]; });
+    }
+    return {
+      rawRecord: r,
+      itemName: itName,
+      answers: mergedAns
+    };
+  });
+}
+
+function getOrderedDevQuestionColumns(devExpandedRows){
+  qTextByIdMap = null;
+  qTextByOrderMap = null;
+  buildQuestionLookupMaps();
+
+  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers']);
+  var titleToKeys = new Map();
+  var extraTitlesOrder = [];
+
+  function registerKeyForTitle(title, rawKey){
+    var normT = norm(title);
+    if(!normT) return;
+    if(!titleToKeys.has(normT)){
+      titleToKeys.set(normT, { title: title, keys: [] });
+      if(!DEV_FIXED_ORDER_TITLES.some(ft => norm(ft) === normT)){
+        extraTitlesOrder.push(normT);
+      }
+    }
+    var entry = titleToKeys.get(normT);
+    if(rawKey && !entry.keys.includes(rawKey)) entry.keys.push(rawKey);
+  }
+
+  devExpandedRows.forEach(er => {
+    var ans = (er && er.answers && typeof er.answers === 'object') ? er.answers : {};
+    Object.keys(ans).forEach(rawKey => {
+      if(skip.has(rawKey)) return;
+      var title = resolveQuestionColumnTitle(rawKey, true);
+      if(title) registerKeyForTitle(title, rawKey);
+    });
+  });
+
+  (questions || []).forEach(q => {
+    if(!q || !q.question_text) return;
+    var normT = norm(q.question_text);
+    if(DEV_FIXED_ORDER_TITLES.some(ft => norm(ft) === normT)){
+      registerKeyForTitle(q.question_text, String(q.id));
+    }
+  });
+
+  var orderedCols = [];
+  DEV_FIXED_ORDER_TITLES.forEach(fixedTitle => {
+    var normT = norm(fixedTitle);
+    var found = titleToKeys.get(normT);
+    var keysList = found ? found.keys.slice() : [];
+    if(normT === norm('ගොවි දායකත්වය') && !keysList.includes('tpl_contrib')){
+      keysList.unshift('tpl_contrib');
+    }
+    orderedCols.push({
+      title: fixedTitle,
+      keys: keysList
+    });
+  });
+
+  extraTitlesOrder.forEach(extraNorm => {
+    var extraCol = titleToKeys.get(extraNorm);
+    if(extraCol && extraCol.keys.length){
+      var hasVal = devExpandedRows.some(er => {
+        var ans = (er && er.answers && typeof er.answers === 'object') ? er.answers : {};
+        return extraCol.keys.some(k => isNonEmptyCellValue(ans[k]));
+      });
+      if(hasVal) orderedCols.push(extraCol);
+    }
+  });
+
+  return orderedCols;
+}
+
+function getDynamicAnswerColumns(recordsList, isDev){
+  if(isDev) return getOrderedDevQuestionColumns(recordsList);
+
+  qTextByIdMap = null;
+  qTextByOrderMap = null;
+  buildQuestionLookupMaps();
+
+  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers']);
+  var colMap = new Map();
+  var colOrder = [];
+
+  recordsList.forEach(entry => {
+    var r = (entry && entry.rawRecord) ? entry.rawRecord : entry;
+    var ans = (entry && entry.answers) ? entry.answers : (r && r.answers ? r.answers : {});
+    if(!ans || typeof ans !== 'object') return;
+    Object.keys(ans).forEach(rawKey => {
+      if(skip.has(rawKey)) return;
+      if(!isNonEmptyCellValue(ans[rawKey])) return;
+      var title = resolveQuestionColumnTitle(rawKey, false);
+      if(!title) return;
+      var normTitle = norm(title);
+      if(!colMap.has(normTitle)){
+        colMap.set(normTitle, { title: title, keys: [rawKey] });
+        colOrder.push(normTitle);
+      } else if(!colMap.get(normTitle).keys.includes(rawKey)){
+        colMap.get(normTitle).keys.push(rawKey);
+      }
+    });
+  });
+
+  return colOrder.map(nk => colMap.get(nk));
+}
+
+function getColumnValueFromAnswers(ans, col){
+  if(!ans || typeof ans !== 'object' || !col) return '-';
+  if(Array.isArray(col.keys)){
+    for(var i = 0; i < col.keys.length; i++){
+      var v = ans[col.keys[i]];
+      if(isNonEmptyCellValue(v)) return formatCellVal(v);
+    }
+  }
+  if(norm(col.title) === norm('ගොවි දායකත්වය')){
+    if(isNonEmptyCellValue(ans.tpl_contrib)) return formatCellVal(ans.tpl_contrib);
+    if(ans.__item_specific && typeof ans.__item_specific === 'object'){
+      for(var ik in ans.__item_specific){
+        var spObj = ans.__item_specific[ik];
+        if(spObj && typeof spObj === 'object'){
+          for(var sk in spObj){
+            if(isNonEmptyCellValue(spObj[sk])) return formatCellVal(spObj[sk]);
+          }
+        }
+      }
+    }
+  }
+  var matchingQs = (questions || []).filter(q => norm(q.question_text) === norm(col.title));
+  for(var j = 0; j < matchingQs.length; j++){
+    var v2 = ans[String(matchingQs[j].id)];
+    if(isNonEmptyCellValue(v2)) return formatCellVal(v2);
+  }
+  for(var k in ans){
+    if(norm(k) === norm(col.title) && isNonEmptyCellValue(ans[k])) return formatCellVal(ans[k]);
+  }
+  return '-';
+}
+
+function initDataFilters(){
+  responses = Array.isArray(responses) ? responses : [];
+  var extRes = responses.filter(r => norm(r.main_type) === 'extension');
+  var devRes = responses.filter(r => norm(r.main_type) === 'development');
+
+  setSelectPreserve('extF_Session', [...new Set(extRes.map(r => r.level1).filter(Boolean))], 'All Sessions');
+  setSelectPreserve('extF_MainProg', [...new Set(extRes.map(r => r.level2).filter(Boolean))], 'All Main Programs');
+  var eProg = document.getElementById('extF_MainProg').value;
+  setSelectPreserve('extF_SubProg', [...new Set(extRes.filter(r => !eProg || norm(r.level2)===norm(eProg)).map(r => r.level3).filter(Boolean))], 'All Sub Programs');
+  setSelectPreserve('extF_AdOffice', hierarchy.map(h => h.name), 'All AD Offices');
+  var eAd = document.getElementById('extF_AdOffice').value;
+  setSelectPreserve('extF_AiOffice', getAllAiOfficesByAdName(eAd), 'All AI Offices');
+
+  setSelectPreserve('devF_Year', [...new Set(devRes.map(r => r.level1).filter(Boolean))], 'All Years');
+  setSelectPreserve('devF_MainProg', [...new Set(devRes.map(r => r.level2).filter(Boolean))], 'All Main Programs');
+  var dProg = document.getElementById('devF_MainProg').value;
+  setSelectPreserve('devF_SubProg', [...new Set(devRes.filter(r => !dProg || norm(r.level2)===norm(dProg)).map(r => r.level3).filter(Boolean))], 'All Sub Programs');
+  var dSub = document.getElementById('devF_SubProg').value;
+  var devExpanded = [];
+  devRes.filter(r => (!dProg || norm(r.level2)===norm(dProg)) && (!dSub || norm(r.level3)===norm(dSub))).forEach(r => {
+    expandDevelopmentResponseRows(r).forEach(er => { if(er.itemName && er.itemName !== '-') devExpanded.push(er.itemName); });
+  });
+  setSelectPreserve('devF_Item', [...new Set(devExpanded)], 'All Items');
+  setSelectPreserve('devF_AdOffice', hierarchy.map(h => h.name), 'All AD Offices');
+  var dAd = document.getElementById('devF_AdOffice').value;
+  setSelectPreserve('devF_AiOffice', getAllAiOfficesByAdName(dAd), 'All AI Offices');
+}
+
+function onExtDataFilterChange(kind){
+  if(kind === 'prog') document.getElementById('extF_SubProg').value = '';
+  if(kind === 'ad') document.getElementById('extF_AiOffice').value = '';
+  initDataFilters(); renderData();
+}
+
+function onDevDataFilterChange(kind){
+  if(kind === 'prog'){ document.getElementById('devF_SubProg').value = ''; document.getElementById('devF_Item').value = ''; }
+  if(kind === 'sub') document.getElementById('devF_Item').value = '';
+  if(kind === 'ad') document.getElementById('devF_AiOffice').value = '';
+  initDataFilters(); renderData();
+}
+
+function fillDataFilters(){
+  var fSub = document.getElementById('fSub');
+  if(fSub) fSub.innerHTML='<option value="">All Sub Offices</option>'+hierarchy.map(h=>'<option value="'+h.id+'">'+h.name+'</option>').join('');
+  initDataFilters();
+}
+
+function renderData(){
+  responses = Array.isArray(responses) ? responses : [];
+  initDataFilters();
+
+  var extAll = responses.filter(r => r && norm(r.main_type) === 'extension');
+  var devAll = responses.filter(r => r && norm(r.main_type) === 'development');
+
+  var eSes = document.getElementById('extF_Session').value;
+  var ePr  = document.getElementById('extF_MainProg').value;
+  var eSub = document.getElementById('extF_SubProg').value;
+  var eAd  = document.getElementById('extF_AdOffice').value;
+  var eAi  = document.getElementById('extF_AiOffice').value;
+
+  var extFiltered = extAll.filter(r => {
+    var adName = resolveAdOfficeForDivision(r.division || r.office);
+    var aiName = cleanOffName(r.division || r.office);
+    return (!eSes || norm(r.level1) === norm(eSes)) &&
+           (!ePr  || norm(r.level2) === norm(ePr)) &&
+           (!eSub || norm(r.level3) === norm(eSub)) &&
+           (!eAd  || norm(adName) === norm(eAd)) &&
+           (!eAi  || norm(aiName) === norm(eAi));
+  });
+  window.filteredExtResponses = extFiltered;
+
+  var dYr   = document.getElementById('devF_Year').value;
+  var dPr   = document.getElementById('devF_MainProg').value;
+  var dSub  = document.getElementById('devF_SubProg').value;
+  var dItem = document.getElementById('devF_Item').value;
+  var dAd   = document.getElementById('devF_AdOffice').value;
+  var dAi   = document.getElementById('devF_AiOffice').value;
+
+  var devExpandedRows = [];
+  devAll.forEach(r => {
+    var adName = resolveAdOfficeForDivision(r.division || r.office);
+    var aiName = cleanOffName(r.division || r.office);
+    var baseMatch = (!dYr  || norm(r.level1) === norm(dYr)) &&
+                    (!dPr  || norm(r.level2) === norm(dPr)) &&
+                    (!dSub || norm(r.level3) === norm(dSub)) &&
+                    (!dAd  || norm(adName) === norm(dAd)) &&
+                    (!dAi  || norm(aiName) === norm(dAi));
+    if(!baseMatch) return;
+    expandDevelopmentResponseRows(r).forEach(er => {
+      if(!dItem || norm(er.itemName) === norm(dItem)){
+        devExpandedRows.push(er);
+      }
+    });
+  });
+  window.filteredDevResponses = devExpandedRows;
+
+  document.getElementById('extDataCount').textContent = extFiltered.length;
+  document.getElementById('devDataCount').textContent = devExpandedRows.length;
+  document.getElementById('dataScopeNote').textContent = 'Total Responses: ' + responses.length + ' • Extension: ' + extFiltered.length + ' • Development (Item Rows): ' + devExpandedRows.length;
+
+  var extCols = getDynamicAnswerColumns(extFiltered, false);
+  var extThead = document.getElementById('extDataThead');
+  if(extThead){
+    extThead.innerHTML = '<tr class="bg-blue-50">' +
+      '<th>Category / Program</th><th>Session</th><th>Sub Program</th><th>AD / AI Office</th><th>AI Officer</th><th>Progress Qty</th>' +
+      extCols.map(col => '<th class="whitespace-nowrap">' + col.title + '</th>').join('') +
+      '<th>Date</th><th>Action</th></tr>';
+  }
+  var extColSpan = 8 + extCols.length;
+  document.getElementById('extDataTbody').innerHTML = extFiltered.length ? extFiltered.map(r => {
+    var catName = r.level2 || 'Extension';
+    var badgeCls = getCategoryColorClass(catName);
+    var adName = resolveAdOfficeForDivision(r.division || r.office);
+    var ans = (r.answers && typeof r.answers === 'object') ? r.answers : {};
+    return '<tr>' +
+      '<td class="text-xs"><span class="px-2.5 py-1 rounded-full border font-bold text-[11px] ' + badgeCls + '">' + catName + '</span></td>' +
+      '<td class="text-xs">' + (r.level1 || '-') + '</td>' +
+      '<td class="text-xs font-semibold">' + (r.level3 || '-') + '</td>' +
+      '<td class="text-xs"><b>' + cleanOffName(r.division || r.office) + '</b><div class="text-[11px] text-slate-400">' + adName + '</div></td>' +
+      '<td class="text-xs">' + (ans.__officer_name || '-') + '</td>' +
+      '<td class="text-xs font-bold">' + (ans.__progress_qty !== undefined && ans.__progress_qty !== '' ? ans.__progress_qty : '-') + '</td>' +
+      extCols.map(col => '<td class="text-xs">' + getColumnValueFromAnswers(ans, col) + '</td>').join('') +
+      '<td class="text-xs whitespace-nowrap">' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>' +
+      '<td class="whitespace-nowrap space-x-2"><button onclick="openEditData(\'' + r.id + '\')" class="text-indigo-600 font-semibold text-xs">Edit</button><button onclick="delData(\'' + r.id + '\')" class="text-red-500 text-xs">Del</button></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="' + extColSpan + '" class="text-center text-xs text-slate-400 py-5">No Extension data</td></tr>';
+
+  var devCols = getOrderedDevQuestionColumns(devExpandedRows);
+  var devThead = document.getElementById('devDataThead');
+  if(devThead){
+    devThead.innerHTML = '<tr class="bg-emerald-50">' +
+      '<th>Program</th>' +
+      '<th>Year</th>' +
+      '<th>Sub Program</th>' +
+      '<th>Item</th>' +
+      '<th>AD / AI Office</th>' +
+      '<th>AI Officer</th>' +
+      devCols.map(col => '<th class="whitespace-nowrap">' + col.title + '</th>').join('') +
+      '<th>Date</th>' +
+      '<th>Action</th>' +
+      '</tr>';
+  }
+  var devColSpan = 8 + devCols.length;
+  document.getElementById('devDataTbody').innerHTML = devExpandedRows.length ? devExpandedRows.map(er => {
+    var r = er.rawRecord;
+    var progName = r.level2 || 'Development';
+    var badgeCls = getCategoryColorClass(progName);
+    var adName = resolveAdOfficeForDivision(r.division || r.office);
+    var aiName = cleanOffName(r.division || r.office);
+    var ans = er.answers || {};
+    var officerName = ans.__officer_name || getOfficerNameByDivision(aiName) || '-';
+    return '<tr>' +
+      '<td class="text-xs"><span class="px-2.5 py-1 rounded-full border font-bold text-[11px] ' + badgeCls + '">' + progName + '</span></td>' +
+      '<td class="text-xs">' + (r.level1 || '-') + '</td>' +
+      '<td class="text-xs font-semibold">' + (r.level3 || '-') + '</td>' +
+      '<td class="text-xs font-bold text-emerald-900">' + (er.itemName || '-') + '</td>' +
+      '<td class="text-xs"><b>' + adName + '</b>' + (aiName ? '<div class="text-[11px] text-slate-500">' + aiName + '</div>' : '') + '</td>' +
+      '<td class="text-xs font-semibold text-indigo-900">' + officerName + '</td>' +
+      devCols.map(col => '<td class="text-xs">' + getColumnValueFromAnswers(ans, col) + '</td>').join('') +
+      '<td class="text-xs whitespace-nowrap">' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>' +
+      '<td class="whitespace-nowrap space-x-2"><button onclick="openEditData(\'' + r.id + '\')" class="text-indigo-600 font-semibold text-xs">Edit</button><button onclick="delData(\'' + r.id + '\')" class="text-red-500 text-xs">Del</button></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="' + devColSpan + '" class="text-center text-xs text-slate-400 py-5">No Development data</td></tr>';
+}
+
+function getOfficerNameByDivision(divName){
+  if(!divName || !Array.isArray(users)) return '';
+  var u = users.find(x => x && (norm(x.division) === norm(divName) || norm(x.office) === norm(divName)));
+  return u ? (u.officer_name || u.name || '') : '';
+}
+
+function openEditData(id){
+  var rec = responses.find(x => String(x.id) === String(id));
+  if(!rec) return;
+  editingId = rec.id;
+  var ans = Object.assign({}, (rec.answers && typeof rec.answers === 'object') ? rec.answers : {});
+  var keys = Object.keys(ans);
+  if(!keys.length) keys = ['__progress_qty', 'note'];
+
+  document.getElementById('editRecordMeta').textContent = (rec.main_type || '').toUpperCase() + ' • ' + (rec.division || rec.office || '');
+  document.getElementById('editFields').innerHTML = keys.map(k => {
+    var val = ans[k];
+    var displayVal = Array.isArray(val) ? val.join(', ') : (val !== undefined && val !== null ? String(val) : '');
+    var label = k === '__progress_qty' ? 'Progress Qty' : (k === '__item_name' ? 'Item Name' : (k === '__officer_name' ? 'AI Officer Name' : (resolveQuestionColumnTitle(k, norm(rec.main_type) === 'development') || k)));
+    return '<div class="grid sm:grid-cols-[200px_1fr] gap-2 items-center bg-white p-2.5 rounded-xl border">' +
+      '<label class="text-xs font-bold text-slate-700">' + label + '</label>' +
+      '<input type="text" data-edit-key="' + encodeURIComponent(k) + '" data-is-arr="' + (Array.isArray(val) ? '1' : '0') + '" value="' + displayVal.replace(/"/g, '&quot;') + '" class="bg-slate-50 text-xs">' +
+    '</div>';
+  }).join('');
+
+  var box = document.getElementById('editBox');
+  box.classList.remove('hidden');
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeEdit(){
+  editingId = null;
+  var box = document.getElementById('editBox');
+  if(box) box.classList.add('hidden');
+  var ef = document.getElementById('editFields');
+  if(ef) ef.innerHTML = '';
+}
+
+async function saveEdit(){
+  if(!editingId) return;
+  var idx = responses.findIndex(x => String(x.id) === String(editingId));
+  if(idx === -1) return;
+
+  var updatedAns = Object.assign({}, (responses[idx].answers && typeof responses[idx].answers === 'object') ? responses[idx].answers : {});
+  document.querySelectorAll('[data-edit-key]').forEach(inp => {
+    var k = decodeURIComponent(inp.dataset.editKey);
+    var raw = inp.value;
+    if(inp.dataset.isArr === '1'){
+      updatedAns[k] = raw.split(',').map(s => s.trim()).filter(Boolean);
+    } else if(k === '__progress_qty' && raw !== '' && !isNaN(Number(raw))){
+      updatedAns[k] = Number(raw);
+    } else {
+      updatedAns[k] = raw;
+    }
+  });
+
+  responses[idx] = Object.assign({}, responses[idx], { answers: updatedAns });
+  if(sb){
+    await sb.from('responses').update({ answers: updatedAns }).eq('id', editingId);
+  }
+  closeEdit(); renderData(); renderDashboard();
+  showToast('Data Updated ✓', true);
+}
+
+function downloadCategoryExcel(type){
+  if(typeof XLSX === 'undefined') return showToast('Excel library not loaded', false);
+  var isDev = type === 'development';
+  var list = isDev ? (window.filteredDevResponses || []) : (window.filteredExtResponses || []);
+  if(!list.length) return showToast('No filtered data available for download', false);
+
+  var dynCols = getDynamicAnswerColumns(list, isDev);
+  var rows = list.map(entry => {
+    var r = (isDev && entry && entry.rawRecord) ? entry.rawRecord : entry;
+    var ans = (isDev && entry && entry.answers) ? entry.answers : (r.answers || {});
+    var adName = resolveAdOfficeForDivision(r.division || r.office);
+    var aiName = cleanOffName(r.division || r.office);
+    var base = isDev ? {
+      'Program': r.level2 || '',
+      'Year': r.level1 || '',
+      'Sub Program': r.level3 || '',
+      'Item': (entry && entry.itemName) || ans.__item_name || '',
+      'AD / AI Office': [adName, aiName].filter(Boolean).join(' / '),
+      'AI Officer': ans.__officer_name || getOfficerNameByDivision(aiName) || ''
+    } : {
+      'Program': r.level2 || '',
+      'Session': r.level1 || '',
+      'Sub Program': r.level3 || '',
+      'AD / AI Office': [adName, aiName].filter(Boolean).join(' / '),
+      'AI Officer': ans.__officer_name || getOfficerNameByDivision(aiName) || '',
+      'Progress Qty': (ans.__progress_qty !== undefined && ans.__progress_qty !== '') ? ans.__progress_qty : ''
+    };
+    dynCols.forEach(col => {
+      var valStr = getColumnValueFromAnswers(ans, col);
+      base[col.title] = valStr === '-' ? '' : valStr;
+    });
+    base['Date'] = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+    return base;
+  });
+
+  var label = isDev ? 'Development' : 'Extension';
+  var ws = XLSX.utils.json_to_sheet(rows);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, label + '_Data');
+  XLSX.writeFile(wb, 'Admin_' + label + '_Filtered_Data.xlsx');
+}
+
+async function delData(id){
+  responses=responses.filter(x=>x.id!==id);
+  if(sb) await sb.from('responses').delete().eq('id',id);
+  renderData();
+}
+
+/* ================= Users (Supabase Save & Refresh Sync) ================= */
+function resetUser(){
+  document.getElementById('userForm').reset();
+  document.getElementById('uId').value='';
+  onUSub();
+}
+
+function editUserForCredentials(id){
+  var u = users.find(x => String(x.id) === String(id));
+  if(!u) return;
+  document.getElementById('uId').value = u.id || '';
+  document.getElementById('uName').value = u.name || '';
+  document.getElementById('uUsername').value = u.username || '';
+  document.getElementById('uOfficer').value = u.officer_name || u.name || '';
+  document.getElementById('uPassword').value = u.password || '';
+  document.getElementById('uRole').value = u.role || 'unit_user';
+  document.getElementById('uStatus').value = u.status || 'active';
+  if(u.sub_office_id){
+    document.getElementById('uSub').value = u.sub_office_id;
+    onUSub();
+  }
+  if(u.division){
+    document.getElementById('uDiv').value = u.division;
+    onUDiv();
+  }
+  if(u.office){
+    document.getElementById('uOffice').value = u.office;
+  }
+  showToast('Editing ' + (u.username || u.name), true);
+}
+
+function renderUsers(){
+  users = Array.isArray(users) ? users : [];
+  var q = norm(document.getElementById('userSearch') ? document.getElementById('userSearch').value : '');
+  var list = q ? users.filter(u => (JSON.stringify(u)).toLowerCase().includes(q)) : users;
+  document.getElementById('userList').innerHTML=list.map(u=>'<div onclick="editUserForCredentials(\''+u.id+'\')" class="cursor-pointer rounded-xl border p-3 flex justify-between items-center bg-white hover:bg-indigo-50/40 transition"><div><b>'+(u.name||'')+'</b><div class="text-xs text-slate-500">'+(u.username||'')+' | '+(u.role||'')+' | '+(u.division||'')+'</div><div class="text-[11px] text-indigo-700 font-semibold mt-0.5">Officer: '+(u.officer_name||'-')+'</div></div><div class="flex items-center gap-2" onclick="event.stopPropagation()"><button onclick="editUserForCredentials(\''+u.id+'\')" class="btn btn-ghost px-2.5 py-1 text-xs">Edit</button><button onclick="delUser(\''+u.id+'\')" class="text-red-500 text-xs">Del</button></div></div>').join('')||'<div class="text-xs text-slate-400">No users</div>';
+}
+
+document.getElementById('userForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var btn = document.getElementById('saveUserBtn');
+  if(btn) btn.disabled = true;
+
+  try{
+    var existingId = document.getElementById('uId').value;
+    var unameVal = document.getElementById('uUsername').value.trim();
+    var existingUser = existingId
+      ? users.find(x => String(x.id) === String(existingId))
+      : users.find(x => norm(x.username) === norm(unameVal));
+
+    var officerVal = document.getElementById('uOfficer').value.trim();
+    var passVal = document.getElementById('uPassword').value;
+
+    var p = {
+      id: (existingUser && existingUser.id) ? existingUser.id : (existingId || ('u_' + Date.now())),
+      name: document.getElementById('uName').value.trim() || (existingUser ? existingUser.name : ''),
+      username: unameVal || (existingUser ? existingUser.username : ''),
+      officer_name: officerVal,
+      password: passVal,
+      role: document.getElementById('uRole').value,
+      sub_office_id: document.getElementById('uSub').value,
+      division: document.getElementById('uDiv').value,
+      office: document.getElementById('uOffice').value,
+      status: document.getElementById('uStatus').value
+    };
+
+    if(sb){
+      var res = await sb.from('profiles').upsert(p, { onConflict: 'username' }).select();
+      if(res.error){
+        showToast('Supabase Save Failed: ' + res.error.message, false);
+        if(btn) btn.disabled = false;
+        return;
+      }
+      if(Array.isArray(res.data) && res.data[0]){
+        p = Object.assign({}, p, res.data[0]);
+      }
+    }
+
+    var idx = users.findIndex(x => String(x.id) === String(p.id) || norm(x.username) === norm(p.username));
+    if(idx > -1) users[idx] = Object.assign({}, users[idx], p);
+    else users.push(p);
+
+    if(norm(localStorage.getItem('user')) === norm(p.username)){
+      localStorage.setItem('user_officer_name', officerVal);
+    }
+
+    document.getElementById('uId').value = p.id;
+    renderUsers();
+    showToast('Officer Name Saved to Supabase ✓', true);
+  } catch(err){
+    console.error(err);
+    showToast('Error saving user', false);
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+});
+
+async function delUser(id){
+  if(!await profConfirm('Delete this user?'))return;
+  var u = users.find(x => String(x.id) === String(id));
+  users=users.filter(x=>String(x.id)!==String(id));
+  if(sb && u){
+    if(u.id) await sb.from('profiles').delete().eq('id', u.id);
+    else if(u.username) await sb.from('profiles').delete().eq('username', u.username);
+  }
+  renderUsers();
+  showToast('User Deleted ✓', true);
+}
+
+function onUSub(){let h=hierarchy.find(x=>x.id===document.getElementById('uSub').value);document.getElementById('uDiv').innerHTML=h?h.divisions.map(d=>'<option>'+d.name+'</option>').join(''):'';onUDiv();}
+function onUDiv(){let divs=getOffices(document.getElementById('uDiv').value);document.getElementById('uOffice').innerHTML=divs.map(o=>'<option>'+o+'</option>').join('');}
+function getOffices(div){for(let h of hierarchy)for(let d of (h.divisions||[]))if(d.name===div)return d.offices||[];return [];}
+
+function renderHierarchy(){
+  document.getElementById('hierList').innerHTML=hierarchy.map(h=>'<button onclick="selH(\''+h.id+'\')" class="w-full text-left rounded-xl border p-4 '+(selHierSub===h.id?'bg-indigo-600 text-white':'bg-white')+'"><div class="font-bold">'+h.name+'</div></button>').join('');
+  let h2=hierarchy.find(x=>x.id===selHierSub);
+  document.getElementById('hierTitle').textContent=h2?h2.name:'';
+  document.getElementById('hierDivs').innerHTML=h2?(h2.divisions||[]).map(d=>'<div onclick="selDiv(\''+d.name+'\')" class="cursor-pointer border p-3 rounded-xl '+(selHierDiv===d.name?'bg-indigo-50':'')+'">'+d.name+'</div>').join(''):'';
+  document.getElementById('officeList').innerHTML=selHierDiv?getOffices(selHierDiv).map(o=>'<div class="border p-2 rounded text-sm">'+o+'</div>').join(''):'';
+}
+function selH(id){selHierSub=id;selHierDiv=null;renderHierarchy();}
+function selDiv(d){selHierDiv=d;renderHierarchy();}
+
+/* ================= Supabase Sync ================= */
+async function sbSync(){
+  if(!sb){
+    document.getElementById('sbStatus').textContent='Offline';
+    renderDashboard(); renderData(); renderUsers(); renderAdminPivTable();
+    return;
+  }
+  try{
+    let n=await sb.from('nodes').select('*').order('sort_order'); if(Array.isArray(n.data)) nodes=n.data;
+    let q=await sb.from('questions').select('*').order('order_index'); if(Array.isArray(q.data)) questions=q.data;
+    let r=await sb.from('responses').select('*').order('created_at',{ascending:false}); if(Array.isArray(r.data)) responses=r.data;
+    let t=await sb.from('targets').select('*'); if(Array.isArray(t.data)) targetRecords=t.data;
+    let p=await sb.from('item_prices').select('*'); if(Array.isArray(p.data)) plItems=p.data;
+    let u=await sb.from('profiles').select('*'); if(Array.isArray(u.data)) users=u.data;
+    let piv=await sb.from('piv_submissions').select('*').order('created_at',{ascending:false});
+    if(piv && Array.isArray(piv.data) && !piv.error){
+      pivRecords = piv.data;
+    } else {
+      pivRecords = [];
+    }
+    document.getElementById('sbStatus').textContent='Data: Connected ✓';
+  }catch(e){
+    console.error(e);
+    document.getElementById('sbStatus').textContent='Error';
+  }
+  renderDashboard(); renderData(); renderUsers(); renderAdminPivTable();
+  if(curStep === 6 && leafId()) renderQuestions();
+}
+
+fillDataFilters();
+document.getElementById('uSub').innerHTML=hierarchy.map(h=>'<option value="'+h.id+'">'+h.name+'</option>').join('');
+onUSub();
+renderDashboard(); gotoStep(1); sbSync();
+</script>
+</body></html>
