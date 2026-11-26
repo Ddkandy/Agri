@@ -215,6 +215,8 @@ function sessionHandoff() {
   }
 }
 
+const FW_MAIN_ADMIN_EMAILS = ['ddagrikandy@gmail.com', 'gdkgdk1194@gmail.com'];
+
 function redirectByRole(role) {
   var handoff = sessionHandoff();
   if (role === 'main_admin') {
@@ -270,17 +272,9 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     var profRes = await supabaseClient
       .from('profiles')
       .select('*')
-      .eq('id', authUser.id)
+      .eq('auth_user_id', authUser.id)
       .maybeSingle();
-
-    // 2. கிடைக்காவிட்டால் username அல்லது email மூலம் தேடுதல்
-    if (!profRes.data) {
-      profRes = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .in('username', [loginId, rawInput, normalizedSlug, authEmail])
-        .maybeSingle();
-    }
+    if (profRes.error) throw profRes.error;
 
     var p = profRes.data;
     if (!p) {
@@ -306,7 +300,12 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
       if (h[j].id === subId) so = h[j];
     }
 
-    var role = p.role || 'unit';
+    var role = p.role;
+    if (!['main_admin','sub_admin','unit'].includes(role)) throw new Error('Invalid account role. Contact Main Admin.');
+    if (role === 'main_admin' && !FW_MAIN_ADMIN_EMAILS.includes(String(authUser.email || '').toLowerCase())) {
+      await supabaseClient.auth.signOut();
+      throw new Error('இந்த Main Admin கணக்கு அங்கீகரிக்கப்பட்ட DD Office email அல்ல.');
+    }
     var subName = p.sub_office_name || (so ? so.name : subId);
     var divName = p.division || '';
     var offName = p.office || '';
@@ -339,13 +338,13 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
   }
 });
 
-function continueLoggedIn() {
+async function continueLoggedIn() {
   try {
     var j = JSON.parse(localStorage.getItem('fw_session') || '{}');
-    redirectByRole(j.role || 'unit');
-  } catch (e) {
-    location.href = 'unit.html';
-  }
+    var sessionResult = await supabaseClient.auth.getSession();
+    if (!sessionResult.data.session || (j.exp && Date.now() > j.exp)) throw new Error('Session expired');
+    redirectByRole(j.role);
+  } catch (e) { await doLogout(); }
 }
 
 async function doLogout() {

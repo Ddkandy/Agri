@@ -633,7 +633,7 @@ window.addEventListener('error',function(e){
       <div><label>Officer Name *</label><input id="uOfficer" required placeholder="AI Officer Name..." class="mt-1 bg-amber-50/60 border-amber-300 font-semibold"></div>
       <div><label>Password *</label><input id="uPassword" type="password" required placeholder="Password..." class="mt-1 bg-indigo-50/60 border-indigo-300 font-semibold"></div>
       <div class="grid grid-cols-2 gap-3">
-        <div><label>Role</label><select id="uRole" class="mt-1"><option value="unit_user">Unit</option><option value="sub_admin">Sub Admin</option><option value="main_admin">Main Admin</option></select></div>
+        <div><label>Role</label><select id="uRole" class="mt-1"><option value="unit">AI Office / Unit</option><option value="sub_admin">Sub Admin</option><option value="main_admin">Main Admin</option></select></div>
         <div><label>Status</label><select id="uStatus" class="mt-1"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
       </div>
       <div><label>Sub Office (AD)</label><select id="uSub" onchange="onUSub()" class="mt-1"></select></div>
@@ -665,25 +665,21 @@ const SUPABASE_URL='https://ghvlbmpjwxgvtlvdxnpi.supabase.co';
 const SUPABASE_KEY='sb_publishable_cRpQp_yLMSYO3VayxQfmXg_Bs-C-ffA';
 const sb=(typeof supabase!=='undefined')?supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
 
-(async function verifySession(){
-  try{
-    var sess = localStorage.getItem('fw_session');
-    var r = localStorage.getItem('role');
-    if(!sess || !r || (r !== 'main_admin' && r !== 'sub_admin')){
-      window.location.replace('index.html');
-      return;
-    }
-    if(sb){
-      var s = await sb.auth.getSession();
-      if(!s || !s.data || !s.data.session){
-        localStorage.clear();
-        window.location.replace('index.html');
-        return;
-      }
-    }
-  }catch(e){
-    window.location.replace('index.html');
-  }
+window.__fwAuthReady = (async function(){
+  try {
+    if(!sb) throw new Error('Supabase client unavailable');
+    const { data:{session}, error: sessionError } = await sb.auth.getSession();
+    if(sessionError || !session) throw new Error('No authenticated session');
+    const { data: profile, error } = await sb.from('profiles').select('*').eq('auth_user_id', session.user.id).maybeSingle();
+    if (String(session.user.email || '').toLowerCase() !== 'ddagrikandy@gmail.com' && String(session.user.email || '').toLowerCase() !== 'gdkgdk1194@gmail.com' && profile?.role === 'main_admin') throw new Error('This email is not an approved DD Office Main Admin account');
+    if(error) throw error;
+    if(!profile || profile.status === 'inactive' || !['main_admin','sub_admin'].includes(profile.role)) throw new Error('Profile not authorized');
+    if(localStorage.getItem('role') && localStorage.getItem('role') !== profile.role) throw new Error('Role mismatch');
+    localStorage.setItem('role', profile.role); localStorage.setItem('user', profile.username || session.user.email || '');
+    localStorage.setItem('user_name', profile.name || profile.full_name || ''); localStorage.setItem('user_subOfficeId', profile.sub_office_id || 'ALL');
+    localStorage.setItem('user_subOfficeName', profile.sub_office_name || profile.sub_office_id || 'ALL'); localStorage.setItem('user_division', profile.division || '');
+    localStorage.setItem('user_office', profile.office || ''); localStorage.setItem('user_officer_name', profile.officer_name || ''); return profile;
+  } catch(err) { console.error('Auth verification failed',err); try{await sb?.auth.signOut();}catch(_){}; ['role','user','user_name','user_subOfficeId','user_subOfficeName','user_division','user_office','user_officer_name','fw_session'].forEach(k=>localStorage.removeItem(k)); window.location.replace('index.html'); return null; }
 })();
 
 window.addEventListener('pageshow', function(event) {
@@ -722,7 +718,6 @@ const DEV_DEFAULT_QUESTIONS = [
   { text: 'දුරකථන අංකය', type: 'number', options: [], required: true },
   { text: 'ජාතික හැදුනුම්පත් අංකය', type: 'short_text', options: [], required: true },
   { text: 'ගොවි දායකත්වය', type: 'multiple_choice', options: ['නොමිලේ', 'ගොවි දායකත්වය - 25%', 'ගොවි දායකත්වය - 50%'], required: true },
-  { text: 'වටිනාකම (රුපියල්)', type: 'short_text', options: [], required: false },
   { text: 'සටහන්', type: 'short_text', options: [], required: false }
 ];
 
@@ -732,7 +727,6 @@ const DEV_FIXED_ORDER_TITLES = [
   'දුරකථන අංකය',
   'ජාතික හැදුනුම්පත් අංකය',
   'ගොවි දායකත්වය',
-  'වටිනාකම (රුපියල්)',
   'සටහන්'
 ];
 
@@ -1322,7 +1316,7 @@ async function saveAllTargets(){
     if(idx>-1)targetRecords[idx]=rec; else targetRecords.push(rec);
     upserts.push(rec);
   });
-  if(sb && upserts.length) await sb.from('targets').upsert(upserts,{onConflict:'id'});
+  if(sb && upserts.length){ var targetSave=await sb.from('targets').upsert(upserts,{onConflict:'id'}); if(targetSave.error) return showToast('Target Save Failed: '+targetSave.error.message,false); }
   if(tMain === 'development') await autoSaveDevQuestionsForCurrentSelection();
   renderDashboard();
   showToast(tMain === 'development' ? 'Targets & Development Questions Auto-Saved ✓' : 'Targets updated ✓', true);
@@ -1660,7 +1654,7 @@ document.getElementById('qForm').addEventListener('submit', async function(e){
   }
 });
 function editQ(id){var q=questions.find(x=>x.id===id);if(!q)return;document.getElementById('qId').value=q.id;document.getElementById('qText').value=q.question_text;document.getElementById('qType').value=q.question_type;document.getElementById('qReq').value=q.is_required?'1':'0';curOptions=Array.isArray(q.options)?q.options.slice():[];renderOpts();onQType();}
-async function delQ(id){if(!await profConfirm('Delete this question?'))return;questions=questions.filter(x=>x.id!==id);if(sb) await sb.from('questions').delete().eq('id',id);renderQuestions();renderDashboard();}
+async function delQ(id){if(!await profConfirm('Delete this question?'))return;if(sb){var d=await sb.from('questions').delete().eq('id',id);if(d.error)return showToast('Delete Failed: '+d.error.message,false);}questions=questions.filter(x=>x.id!==id);renderQuestions();renderDashboard();}
 async function loadDevTemplate(){
   var lid=leafId(); if(!lid)return;
   var oldQs = questions.filter(q => q && String(q.node_id) === String(lid));
@@ -1743,8 +1737,8 @@ document.getElementById('plForm').addEventListener('submit', async function(e){
 });
 async function delPlItem(id){
   if(!await profConfirm('Delete this price item?'))return;
+  if(sb){ var delRes=await sb.from('item_prices').delete().eq('id',id); if(delRes.error) return showToast('Delete Failed: '+delRes.error.message,false); }
   plItems=plItems.filter(x=>x.id!==id);
-  if(sb) await sb.from('item_prices').delete().eq('id',id);
   renderPlTableAndChart();
 }
 function renderPlTableAndChart(){
@@ -2420,7 +2414,8 @@ async function saveEdit(){
 
   responses[idx] = Object.assign({}, responses[idx], { answers: updatedAns });
   if(sb){
-    await sb.from('responses').update({ answers: updatedAns }).eq('id', editingId);
+    var updateResult=await sb.from('responses').update({ answers: updatedAns }).eq('id', editingId);
+    if(updateResult.error) return showToast('Data Update Failed: '+updateResult.error.message,false);
   }
   closeEdit(); renderData(); renderDashboard();
   showToast('Data Updated ✓', true);
@@ -2489,7 +2484,7 @@ function editUserForCredentials(id){
   document.getElementById('uUsername').value = u.username || '';
   document.getElementById('uOfficer').value = u.officer_name || u.name || '';
   document.getElementById('uPassword').value = u.password || '';
-  document.getElementById('uRole').value = u.role || 'unit_user';
+  document.getElementById('uRole').value = u.role || 'unit';
   document.getElementById('uStatus').value = u.status || 'active';
   if(u.sub_office_id){
     document.getElementById('uSub').value = u.sub_office_id;
@@ -2532,7 +2527,6 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
       name: document.getElementById('uName').value.trim() || (existingUser ? existingUser.name : ''),
       username: unameVal || (existingUser ? existingUser.username : ''),
       officer_name: officerVal,
-      password: passVal,
       role: document.getElementById('uRole').value,
       sub_office_id: document.getElementById('uSub').value,
       division: document.getElementById('uDiv').value,
@@ -2541,15 +2535,12 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
     };
 
     if(sb){
-      var res = await sb.from('profiles').upsert(p, { onConflict: 'username' }).select();
-      if(res.error){
-        showToast('Supabase Save Failed: ' + res.error.message, false);
-        if(btn) btn.disabled = false;
-        return;
+      var result = await sb.functions.invoke('admin-create-user', { body: { profile: p, password: passVal || null } });
+      if(result.error || !result.data || result.data.error){
+        var msg = result.error ? result.error.message : ((result.data && result.data.error) || 'User provisioning failed');
+        showToast('User/Auth Save Failed: ' + msg, false); return;
       }
-      if(Array.isArray(res.data) && res.data[0]){
-        p = Object.assign({}, p, res.data[0]);
-      }
+      p = Object.assign({}, p, result.data.profile || {});
     }
 
     var idx = users.findIndex(x => String(x.id) === String(p.id) || norm(x.username) === norm(p.username));
@@ -2574,11 +2565,11 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
 async function delUser(id){
   if(!await profConfirm('Delete this user?'))return;
   var u = users.find(x => String(x.id) === String(id));
-  users=users.filter(x=>String(x.id)!==String(id));
   if(sb && u){
-    if(u.id) await sb.from('profiles').delete().eq('id', u.id);
-    else if(u.username) await sb.from('profiles').delete().eq('username', u.username);
+    var del = u.id ? await sb.from('profiles').delete().eq('id', u.id) : await sb.from('profiles').delete().eq('username', u.username);
+    if(del.error) return showToast('User Delete Failed: '+del.error.message,false);
   }
+  users=users.filter(x=>String(x.id)!==String(id));
   renderUsers();
   showToast('User Deleted ✓', true);
 }
@@ -2599,6 +2590,7 @@ function selDiv(d){selHierDiv=d;renderHierarchy();}
 
 /* ================= Supabase Sync ================= */
 async function sbSync(){
+  if(window.__fwAuthReady && !(await window.__fwAuthReady)) return;
   if(!sb){
     document.getElementById('sbStatus').textContent='Offline';
     renderDashboard(); renderData(); renderUsers(); renderAdminPivTable();
@@ -2612,6 +2604,8 @@ async function sbSync(){
     let p=await sb.from('item_prices').select('*'); if(Array.isArray(p.data)) plItems=p.data;
     let u=await sb.from('profiles').select('*'); if(Array.isArray(u.data)) users=u.data;
     let piv=await sb.from('piv_submissions').select('*').order('created_at',{ascending:false});
+    var syncError = [n,q,r,t,p,u,piv].find(x => x && x.error);
+    if(syncError) throw new Error(syncError.error.message);
     if(piv && Array.isArray(piv.data) && !piv.error){
       pivRecords = piv.data;
     } else {

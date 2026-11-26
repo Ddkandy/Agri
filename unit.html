@@ -555,7 +555,6 @@ const DEV_DEFAULT_QUESTIONS = [
   { text: 'දුරකථන අංකය', type: 'number', options: [], required: true },
   { text: 'ජාතික හැදුනුම්පත් අංකය', type: 'short_text', options: [], required: true },
   { text: 'ගොවි දායකත්වය', type: 'multiple_choice', options: ['නොමිලේ', 'ගොවි දායකත්වය - 25%', 'ගොවි දායකත්වය - 50%'], required: true },
-  { text: 'වටිනාකම (රුපියල්)', type: 'short_text', options: [], required: false },
   { text: 'සටහන්', type: 'short_text', options: [], required: false }
 ];
 
@@ -565,7 +564,6 @@ const DEV_FIXED_ORDER_TITLES = [
   'දුරකථන අංකය',
   'ජාතික හැදුනුම්පත් අංකය',
   'ගොවි දායකත්වය',
-  'වටිනාකම (රුපියල්)',
   'සටහන්'
 ];
 
@@ -575,31 +573,16 @@ function openModal(o){return new Promise(function(res){__mRes=res;document.getEl
 function closeModal(ok){document.getElementById('modalBack').classList.remove('show');if(__mRes){var r=__mRes;__mRes=null;r({ok:ok,value:document.getElementById('modalInput').value});}}
 function profConfirm(m,t){return openModal({title:t||'Confirm',msg:m,icon:'⚠️',okText:'Yes'}).then(function(r){return r.ok;});}
 
-(function verifyAuth(){
-  try{
-    var h=(location.hash||'');
-    if(h.indexOf('#fw=')===0){
-      var decoded=decodeURIComponent(escape(atob(h.slice(4))));
-      var hj=JSON.parse(decoded);
-      if(hj&&hj.user&&hj.role){
-        localStorage.setItem('fw_session',decoded);
-        localStorage.setItem('role',hj.role);
-        localStorage.setItem('user',hj.user);
-        if(hj.subOfficeId) localStorage.setItem('user_subOfficeId',hj.subOfficeId);
-        if(hj.subOfficeName) localStorage.setItem('user_subOfficeName',hj.subOfficeName);
-        if(hj.division) localStorage.setItem('user_division',hj.division);
-        if(hj.office) localStorage.setItem('user_office',hj.office);
-        if(hj.officer_name) localStorage.setItem('user_officer_name',hj.officer_name);
-      }
-      history.replaceState(null,'',location.pathname);
-    }
-  }catch(e){}
-  var s=localStorage.getItem('fw_session');
-  if(!s){ window.location.replace('index.html'); return; }
-  try{
-    var j=JSON.parse(s);
-    if(j.exp && Date.now()>j.exp){ localStorage.removeItem('fw_session'); window.location.replace('index.html'); }
-  }catch(e){}
+window.__fwAuthReady = (async function(){
+  try {
+    if(!sb) throw new Error('Supabase client unavailable');
+    const { data:{session}, error: sessionError } = await sb.auth.getSession(); if(sessionError || !session) throw new Error('No authenticated session');
+    const { data: profile, error } = await sb.from('profiles').select('*').eq('auth_user_id', session.user.id).maybeSingle(); if(error) throw error;
+    if(!profile || profile.status === 'inactive' || profile.role !== 'unit') throw new Error('Unit Officer access denied');
+    localStorage.setItem('role',profile.role); localStorage.setItem('user',profile.username || session.user.email || ''); localStorage.setItem('user_name',profile.name || profile.full_name || '');
+    localStorage.setItem('user_subOfficeId',profile.sub_office_id || ''); localStorage.setItem('user_subOfficeName',profile.sub_office_name || profile.sub_office_id || '');
+    localStorage.setItem('user_division',profile.division || ''); localStorage.setItem('user_office',profile.office || ''); localStorage.setItem('user_officer_name',profile.officer_name || ''); return profile;
+  } catch(err) { console.error('Auth verification failed',err); try{await sb?.auth.signOut();}catch(_){}; ['role','user','user_name','user_subOfficeId','user_subOfficeName','user_division','user_office','user_officer_name','fw_session'].forEach(k=>localStorage.removeItem(k)); window.location.replace('index.html'); return null; }
 })();
 
 var mySubId=localStorage.getItem('user_subOfficeId')||'';
@@ -1560,9 +1543,9 @@ function renderUForm(){
       ans.__item_specific = itemSpecificMap;
     }
 
-    var rec={id:'r'+Date.now(),main_type:curMain,node_id:baseNodeId,node_path:pathParts.join(' → '),level1:n1?n1.title:'',level2:n2?n2.title:'',level3:isDev?(n3?n3.title:''):(nSub?nSub.title:''),division:myDiv,office:myOffice,answers:ans,created_at:new Date().toISOString()};
+    var rec={id:'r'+Date.now(),main_type:curMain,node_id:baseNodeId,node_path:pathParts.join(' → '),level1:n1?n1.title:'',level2:n2?n2.title:'',level3:isDev?(n3?n3.title:''):(nSub?nSub.title:''),sub_office_id:mySubId,division:myDiv,office:myOffice,answers:ans,created_at:new Date().toISOString()};
     responses.unshift(rec);
-    if(sb){ var res=await sb.from('responses').insert(rec); if(res.error) showToast('Saved locally (DB: '+res.error.message+')',false); }
+    if(sb){ var res=await sb.from('responses').insert(rec); if(res.error){ responses.shift(); showToast('Database Save Failed: '+res.error.message,false); btn.disabled=false; btn.textContent='✓ Submit Data & Update Progress'; return; } }
     showToast('Data Submitted & Progress Updated ✓',true);
     btn.disabled=false; btn.textContent='✓ Submit Data & Update Progress';
     resetFormInputsOnly(); renderTargetProgressBox(); renderUnitTargets();
@@ -1842,11 +1825,11 @@ async function saveMyEdit(){
 async function deleteMyRow(id){
   var ok = await profConfirm('Delete this record permanently?', 'Delete Record');
   if(!ok) return;
-  responses = (responses||[]).filter(r => String(r.id) !== String(id));
   if(sb){
     var res = await sb.from('responses').delete().eq('id', id);
-    if(res.error) showToast('DB Delete error: ' + res.error.message, false);
+    if(res.error) return showToast('DB Delete error: ' + res.error.message, false);
   }
+  responses = (responses||[]).filter(r => String(r.id) !== String(id));
   showToast('Deleted ✓', true);
   renderMy(); renderUnitTargets();
 }
@@ -1970,6 +1953,7 @@ async function submitPivEntry(e){
     banked_date: document.getElementById('pivBankedDate').value,
     piv_submit_date: document.getElementById('pivSubmitDate').value,
     piv_no: document.getElementById('pivNumber').value,
+    sub_office_id: mySubId,
     division: myDiv,
     office: myOffice,
     ad_status: 'Pending',
@@ -1979,7 +1963,7 @@ async function submitPivEntry(e){
   pivRecords.unshift(rec);
   if(sb){
     var res = await sb.from('piv_submissions').insert(rec);
-    if(res.error) showToast('Saved locally (DB: ' + res.error.message + ')', false);
+    if(res.error){ pivRecords.shift(); showToast('Database Save Failed: ' + res.error.message, false); btn.disabled=false; btn.textContent='💾 Submit PIV & Generate Unit Number'; return; }
   }
   document.getElementById('pivAutoUnitNoPreview').value = autoNo;
   showToast('PIV Submitted ✓ (' + autoNo + ')', true);
@@ -1995,14 +1979,15 @@ function renderPivTable(){
 async function deletePivRow(id){
   var ok = await profConfirm('Delete this PIV record?', 'Delete PIV');
   if(!ok) return;
+  if(sb){ var delRes = await sb.from('piv_submissions').delete().eq('id', id); if(delRes.error) return showToast('Delete Failed: '+delRes.error.message,false); }
   pivRecords = (pivRecords||[]).filter(p => String(p.id) !== String(id));
-  if(sb) await sb.from('piv_submissions').delete().eq('id', id);
   showToast('PIV Deleted ✓', true);
   renderPivTable();
 }
 
 /* ================= Supabase Sync & Auth ================= */
 async function sbSyncAll(){
+  if(window.__fwAuthReady && !(await window.__fwAuthReady)) return;
   var st = document.getElementById('sbSyncStatus');
   if(st) st.textContent = 'Syncing Data...';
   if(!sb){ if(st) st.textContent = 'Offline Mode'; return; }
@@ -2015,6 +2000,8 @@ async function sbSyncAll(){
       sb.from('targets').select('*'),
       sb.from('piv_submissions').select('*').order('created_at', { ascending: false })
     ]);
+    var syncError = [nRes,qRes,rRes,pRes,tRes,pivRes].find(x => x && x.error);
+    if(syncError) throw new Error(syncError.error.message);
     if(nRes.data) nodes = nRes.data;
     if(qRes.data) questions = qRes.data;
     if(rRes.data) responses = rRes.data;
@@ -2028,7 +2015,8 @@ async function sbSyncAll(){
   }
 }
 
-function logout(){
+async function logout(){
+  try{ if(sb) await sb.auth.signOut(); }catch(e){}
   localStorage.removeItem('fw_session');
   window.location.replace('index.html');
 }
