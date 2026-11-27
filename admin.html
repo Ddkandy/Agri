@@ -99,7 +99,7 @@ window.addEventListener('error',function(e){
   </div>
   <div class="flex items-center gap-2">
     <span id="sbStatus" class="text-[11px] px-2 py-1 rounded bg-slate-100">Data...</span>
-    <button onclick="goNav('targets')" class="btn btn-primary px-4 py-2 text-xs">🎯 Target Setup</button>
+    <button onclick="goNav('targets')" class="btn btn-primary px-4 py-2 text-xs">🎯 Target Setup</button><button onclick="logout()" class="btn btn-ghost text-red-600 px-3 py-2 text-xs">Logout</button>
   </div>
 </div>
 
@@ -1358,7 +1358,8 @@ function builderSelectCard(n, sel, pickFn, level){
         '<button type="button" onclick="wMoveBuilderNode(\''+n.id+'\',-1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↑</button>' +
         '<button type="button" onclick="wMoveBuilderNode(\''+n.id+'\',1,'+level+')" class="btn btn-ghost px-2 py-1 text-xs">↓</button>' +
         '<button type="button" onclick="'+copyFn+'(\''+n.id+'\')" class="btn btn-ghost px-2.5 py-1 text-xs font-bold text-indigo-700 border border-indigo-200 bg-indigo-50">📋 Copy All</button>' +
-        '<button type="button" onclick="'+editFn+'(\''+n.id+'\')" class="btn btn-ghost px-2 py-1 text-xs font-semibold text-slate-700">✏️ Edit</button>' +
+        '<button type="button" onclick="wToggleBuilderPublish(\''+n.id+'\')" class="btn btn-ghost px-2 py-1 text-xs font-semibold '+(n.is_published?'text-emerald-700':'text-amber-700')+'">'+(n.is_published?'Published ✓':'Publish Off')+'</button>' +
+    '<button type="button" onclick="'+editFn+'(\''+n.id+'\')" class="btn btn-ghost px-2 py-1 text-xs font-semibold text-slate-700">✏️ Edit</button>' +
         '<button type="button" onclick="wDeleteBuilderNode(\''+n.id+'\','+level+')" class="btn btn-ghost px-2 py-1 text-xs font-semibold text-red-600">🗑 Delete</button>' +
         '<span class="text-indigo-600 text-sm font-semibold ml-1">'+(sel?'✓':'Select →')+'</span>' +
       '</div>' +
@@ -1465,6 +1466,13 @@ function wEditL2(id){ return wEditBuilderNode(id, 2); }
 function wEditL3(id){ return wEditBuilderNode(id, 3); }
 function wEditL4(id){ return wEditBuilderNode(id, 4); }
 
+async function wToggleBuilderPublish(id){
+  var n=nodes.find(x=>String(x.id)===String(id)); if(!n) return;
+  n.is_published=!n.is_published;
+  if(sb){var res=await sb.from('nodes').update({is_published:n.is_published}).eq('id',id); if(res.error){n.is_published=!n.is_published;return showToast('Publish update failed: '+res.error.message,false);}}
+  if(curMain==='extension') renderL1(); else renderL1(); renderDashboard();
+  showToast(n.is_published?'Published to Unit ✓':'Hidden from Unit ✓',true);
+}
 function renderL1(){
   document.getElementById('w2Title').textContent=curMain==='extension'?'Step 2 — Season':'Step 2 — Year';
   document.getElementById('l1List').innerHTML=childrenOf(null,1).map(n=>builderSelectCard(n,curL1===n.id,'pickL1',1)).join('')||'<div class="text-xs text-slate-400">Add items in Target Setup</div>';
@@ -1990,12 +1998,64 @@ function buildQuestionLookupMaps(){
   qTextByOrderMap = byOrder;
 }
 
-function resolveQuestionColumnTitle(rawKey, isDev){
+function resolveQuestionColumnTitle(rawKey, isDev, responseRow){
   if(!qTextByIdMap || !qTextByOrderMap) buildQuestionLookupMaps();
   var k = String(rawKey || '').trim();
   if(!k) return '';
+  if(norm(k) === 'node' || /^node_id$/i.test(k)) return '';
   if(norm(k) === 'tpl_contrib' || norm(k).startsWith('__item_contrib_')) return 'ගොවි දායකත්වය';
   if(qTextByIdMap.has(k)) return qTextByIdMap.get(k);
+
+  var numericParts = k.match(/\d+/g) || [];
+  var matchedQuestion = null;
+  function idTokens(v){ return String(v == null ? '' : v).match(/\d+/g) || []; }
+  if(numericParts.length){
+    var finalToken = numericParts[numericParts.length - 1];
+    matchedQuestion = (questions || []).find(function(q){
+      if(!q || q.id === undefined) return false;
+      var qid=String(q.id);
+      var qt=idTokens(qid);
+      return qid===finalToken || (qt.length && qt[qt.length-1]===finalToken);
+    }) || null;
+  }
+  if(!matchedQuestion){
+    matchedQuestion = (questions || []).find(function(q){
+      return q && q.id !== undefined && numericParts.includes(String(q.id));
+    }) || null;
+  }
+  if(!matchedQuestion && /^q_n_/i.test(k) && numericParts.length >= 3){
+    var nodeToken=numericParts[0];
+    var orderTokens=numericParts.slice(1,-1);
+    var rowNode=responseRow && (responseRow.node_id || (responseRow.rawRecord && responseRow.rawRecord.node_id));
+    var scopedNode=rowNode!==undefined && rowNode!==null ? String(rowNode) : nodeToken;
+    matchedQuestion=(questions||[]).find(function(q){
+      if(!q) return false;
+      var sameNode=(q.node_id!==undefined && String(q.node_id)===scopedNode);
+      var sameOrder=(q.order_index!==undefined && orderTokens.includes(String(q.order_index)));
+      return sameNode && sameOrder;
+    }) || (questions||[]).find(function(q){
+      return q && String(q.node_id||'')===nodeToken && q.order_index!==undefined && orderTokens.includes(String(q.order_index));
+    }) || null;
+  }
+  if(!matchedQuestion && numericParts.length){
+    var candidates=(questions||[]).filter(function(q){
+      if(!q || q.id===undefined) return false;
+      var qidTokens=String(q.id).match(/\d+/g)||[];
+      return qidTokens.length && numericParts.includes(qidTokens[qidTokens.length-1]);
+    });
+    if(candidates.length>1 && /^q_n_/i.test(k)){
+      var nodeTok=numericParts[0], orderTok=numericParts.slice(1,-1);
+      var narrowed=candidates.filter(function(q){
+        return String(q.node_id||'')===nodeTok && orderTok.includes(String(q.order_index||''));
+      });
+      if(narrowed.length) candidates=narrowed;
+    }
+    matchedQuestion=candidates[0]||null;
+  }
+  if(matchedQuestion){
+    var actualText = String(matchedQuestion.question_text || matchedQuestion.title || matchedQuestion.label || '').trim();
+    if(actualText) return actualText;
+  }
 
   var tplMatch = k.match(/^tpl_def_(\d+)$/i);
   if(tplMatch){
@@ -2027,6 +2087,9 @@ function expandDevelopmentResponseRows(r){
     if(ans.__item_specific && ans.__item_specific[singleItem]){
       Object.keys(ans.__item_specific[singleItem]).forEach(sk => { mergedSingle[sk] = ans.__item_specific[singleItem][sk]; });
     }
+    var singleQtyMap = (ans.__item_quantities && typeof ans.__item_quantities === 'object') ? ans.__item_quantities[singleItem] : null;
+    if(singleQtyMap !== undefined && singleQtyMap !== null && singleQtyMap !== '') mergedSingle.__progress_qty = singleQtyMap;
+    else if(ans.__per_item_qty && ans.__per_item_qty[singleItem] !== undefined) mergedSingle.__progress_qty = ans.__per_item_qty[singleItem];
     return [{
       rawRecord: r,
       itemName: singleItem,
@@ -2040,7 +2103,7 @@ function expandDevelopmentResponseRows(r){
     var skipCommon = new Set(['ගොවි දායකත්වය']);
     Object.keys(ans).forEach(k => {
       if(k === '__item_specific') return;
-      var qTitle = resolveQuestionColumnTitle(k, true);
+      var qTitle = resolveQuestionColumnTitle(k, true, r);
       if(qTitle && skipCommon.has(qTitle)) return;
       mergedAns[k] = ans[k];
     });
@@ -2064,15 +2127,16 @@ function getOrderedDevQuestionColumns(devExpandedRows){
   qTextByOrderMap = null;
   buildQuestionLookupMaps();
 
-  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers']);
+  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers','node','node_id']);
   var titleToKeys = new Map();
   var extraTitlesOrder = [];
 
   function registerKeyForTitle(title, rawKey){
-    var normT = norm(title);
-    if(!normT) return;
+    var cleanTitle = String(title || '').trim();
+    var normT = norm(cleanTitle);
+    if(!normT || normT === 'node' || normT === 'node_id') return;
     if(!titleToKeys.has(normT)){
-      titleToKeys.set(normT, { title: title, keys: [] });
+      titleToKeys.set(normT, { title: cleanTitle, keys: [] });
       if(!DEV_FIXED_ORDER_TITLES.some(ft => norm(ft) === normT)){
         extraTitlesOrder.push(normT);
       }
@@ -2081,21 +2145,24 @@ function getOrderedDevQuestionColumns(devExpandedRows){
     if(rawKey && !entry.keys.includes(rawKey)) entry.keys.push(rawKey);
   }
 
-  devExpandedRows.forEach(er => {
-    var ans = (er && er.answers && typeof er.answers === 'object') ? er.answers : {};
-    Object.keys(ans).forEach(rawKey => {
-      if(skip.has(rawKey)) return;
-      var title = resolveQuestionColumnTitle(rawKey, true);
-      if(title) registerKeyForTitle(title, rawKey);
-    });
-  });
-
+  // 1. Register all Development questions defined in Form Builder / Supabase
   (questions || []).forEach(q => {
     if(!q || !q.question_text) return;
-    var normT = norm(q.question_text);
-    if(DEV_FIXED_ORDER_TITLES.some(ft => norm(ft) === normT)){
+    var parentNode = (nodes || []).find(n => String(n.id) === String(q.node_id));
+    if(!parentNode || norm(parentNode.main_type) === 'development'){
       registerKeyForTitle(q.question_text, String(q.id));
     }
+  });
+
+  // 2. Register all question keys present in response answers
+  (devExpandedRows || []).forEach(er => {
+    var ans = (er && er.answers && typeof er.answers === 'object') ? er.answers : {};
+    Object.keys(ans).forEach(rawKey => {
+      if(skip.has(rawKey) || skip.has(norm(rawKey))) return;
+      var title = resolveQuestionColumnTitle(rawKey, true, er.rawRecord || er);
+      if(!title && !rawKey.startsWith('__') && norm(rawKey) !== 'node' && norm(rawKey) !== 'node_id') title = rawKey;
+      if(title) registerKeyForTitle(title, rawKey);
+    });
   });
 
   var orderedCols = [];
@@ -2114,12 +2181,8 @@ function getOrderedDevQuestionColumns(devExpandedRows){
 
   extraTitlesOrder.forEach(extraNorm => {
     var extraCol = titleToKeys.get(extraNorm);
-    if(extraCol && extraCol.keys.length){
-      var hasVal = devExpandedRows.some(er => {
-        var ans = (er && er.answers && typeof er.answers === 'object') ? er.answers : {};
-        return extraCol.keys.some(k => isNonEmptyCellValue(ans[k]));
-      });
-      if(hasVal) orderedCols.push(extraCol);
+    if(extraCol && extraCol.title){
+      orderedCols.push(extraCol);
     }
   });
 
@@ -2133,7 +2196,7 @@ function getDynamicAnswerColumns(recordsList, isDev){
   qTextByOrderMap = null;
   buildQuestionLookupMaps();
 
-  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers']);
+  var skip = new Set(['__item_name','__selected_items','__item_specific','__item_quantities','__progress_qty','__officer_name','__user','__per_item_qty','__per_item_answers','node','node_id']);
   var colMap = new Map();
   var colOrder = [];
 
@@ -2142,9 +2205,9 @@ function getDynamicAnswerColumns(recordsList, isDev){
     var ans = (entry && entry.answers) ? entry.answers : (r && r.answers ? r.answers : {});
     if(!ans || typeof ans !== 'object') return;
     Object.keys(ans).forEach(rawKey => {
-      if(skip.has(rawKey)) return;
+      if(skip.has(rawKey) || skip.has(norm(rawKey))) return;
       if(!isNonEmptyCellValue(ans[rawKey])) return;
-      var title = resolveQuestionColumnTitle(rawKey, false);
+      var title = resolveQuestionColumnTitle(rawKey, false, r);
       if(!title) return;
       var normTitle = norm(title);
       if(!colMap.has(normTitle)){
@@ -2310,7 +2373,7 @@ function renderData(){
       '<td class="text-xs">' + (r.level1 || '-') + '</td>' +
       '<td class="text-xs font-semibold">' + (r.level3 || '-') + '</td>' +
       '<td class="text-xs"><b>' + cleanOffName(r.division || r.office) + '</b><div class="text-[11px] text-slate-400">' + adName + '</div></td>' +
-      '<td class="text-xs">' + (ans.__officer_name || '-') + '</td>' +
+      '<td class="text-xs">' + (ans.__officer_name || getOfficerNameByDivision(cleanOffName(r.division || r.office)) || '-') + '</td>' +
       '<td class="text-xs font-bold">' + (ans.__progress_qty !== undefined && ans.__progress_qty !== '' ? ans.__progress_qty : '-') + '</td>' +
       extCols.map(col => '<td class="text-xs">' + getColumnValueFromAnswers(ans, col) + '</td>').join('') +
       '<td class="text-xs whitespace-nowrap">' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>' +
@@ -2322,12 +2385,12 @@ function renderData(){
   var devThead = document.getElementById('devDataThead');
   if(devThead){
     devThead.innerHTML = '<tr class="bg-emerald-50">' +
-      '<th>Program</th>' +
       '<th>Year</th>' +
+      '<th>Main Program</th>' +
       '<th>Sub Program</th>' +
       '<th>Item</th>' +
-      '<th>AD / AI Office</th>' +
       '<th>AI Officer</th>' +
+      '<th>Qty</th>' +
       devCols.map(col => '<th class="whitespace-nowrap">' + col.title + '</th>').join('') +
       '<th>Date</th>' +
       '<th>Action</th>' +
@@ -2343,12 +2406,12 @@ function renderData(){
     var ans = er.answers || {};
     var officerName = ans.__officer_name || getOfficerNameByDivision(aiName) || '-';
     return '<tr>' +
-      '<td class="text-xs"><span class="px-2.5 py-1 rounded-full border font-bold text-[11px] ' + badgeCls + '">' + progName + '</span></td>' +
       '<td class="text-xs">' + (r.level1 || '-') + '</td>' +
+      '<td class="text-xs"><span class="px-2.5 py-1 rounded-full border font-bold text-[11px] ' + badgeCls + '">' + progName + '</span></td>' +
       '<td class="text-xs font-semibold">' + (r.level3 || '-') + '</td>' +
       '<td class="text-xs font-bold text-emerald-900">' + (er.itemName || '-') + '</td>' +
-      '<td class="text-xs"><b>' + adName + '</b>' + (aiName ? '<div class="text-[11px] text-slate-500">' + aiName + '</div>' : '') + '</td>' +
       '<td class="text-xs font-semibold text-indigo-900">' + officerName + '</td>' +
+      '<td class="text-xs font-bold text-emerald-700">' + (ans.__progress_qty !== undefined && ans.__progress_qty !== '' ? ans.__progress_qty : (ans.__per_item_qty && ans.__per_item_qty[er.itemName] !== undefined ? ans.__per_item_qty[er.itemName] : '-')) + '</td>' +
       devCols.map(col => '<td class="text-xs">' + getColumnValueFromAnswers(ans, col) + '</td>').join('') +
       '<td class="text-xs whitespace-nowrap">' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>' +
       '<td class="whitespace-nowrap space-x-2"><button onclick="openEditData(\'' + r.id + '\')" class="text-indigo-600 font-semibold text-xs">Edit</button><button onclick="delData(\'' + r.id + '\')" class="text-red-500 text-xs">Del</button></td>' +
@@ -2374,7 +2437,7 @@ function openEditData(id){
   document.getElementById('editFields').innerHTML = keys.map(k => {
     var val = ans[k];
     var displayVal = Array.isArray(val) ? val.join(', ') : (val !== undefined && val !== null ? String(val) : '');
-    var label = k === '__progress_qty' ? 'Progress Qty' : (k === '__item_name' ? 'Item Name' : (k === '__officer_name' ? 'AI Officer Name' : (resolveQuestionColumnTitle(k, norm(rec.main_type) === 'development') || k)));
+    var label = k === '__progress_qty' ? 'Progress Qty' : (k === '__item_name' ? 'Item Name' : (k === '__officer_name' ? 'AI Officer Name' : (resolveQuestionColumnTitle(k, norm(rec.main_type) === 'development', rec) || k)));
     return '<div class="grid sm:grid-cols-[200px_1fr] gap-2 items-center bg-white p-2.5 rounded-xl border">' +
       '<label class="text-xs font-bold text-slate-700">' + label + '</label>' +
       '<input type="text" data-edit-key="' + encodeURIComponent(k) + '" data-is-arr="' + (Array.isArray(val) ? '1' : '0') + '" value="' + displayVal.replace(/"/g, '&quot;') + '" class="bg-slate-50 text-xs">' +
@@ -2434,12 +2497,12 @@ function downloadCategoryExcel(type){
     var adName = resolveAdOfficeForDivision(r.division || r.office);
     var aiName = cleanOffName(r.division || r.office);
     var base = isDev ? {
-      'Program': r.level2 || '',
       'Year': r.level1 || '',
+      'Main Program': r.level2 || '',
       'Sub Program': r.level3 || '',
       'Item': (entry && entry.itemName) || ans.__item_name || '',
-      'AD / AI Office': [adName, aiName].filter(Boolean).join(' / '),
-      'AI Officer': ans.__officer_name || getOfficerNameByDivision(aiName) || ''
+      'AI Officer': ans.__officer_name || getOfficerNameByDivision(aiName) || '',
+      'Qty': (ans.__progress_qty !== undefined && ans.__progress_qty !== '') ? ans.__progress_qty : (ans.__per_item_qty && ans.__per_item_qty[(entry && entry.itemName) || ans.__item_name] !== undefined ? ans.__per_item_qty[(entry && entry.itemName) || ans.__item_name] : '')
     } : {
       'Program': r.level2 || '',
       'Session': r.level1 || '',

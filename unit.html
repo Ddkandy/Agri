@@ -501,8 +501,8 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
           <input type="date" id="pivSubmitDate" required class="mt-1 bg-white text-xs">
         </div>
         <div>
-          <label class="text-xs font-semibold">8. PIV No *</label>
-          <input type="text" id="pivNumber" required placeholder="PIV Number" class="mt-1 bg-white text-xs font-semibold">
+          <label class="text-xs font-semibold">8. Number of PIV *</label>
+          <input type="number" id="pivNumber" min="1" step="1" required placeholder="Number of PIV issued" class="mt-1 bg-white text-xs font-semibold">
         </div>
       </div>
 
@@ -530,7 +530,7 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
             <th>Payment Amount</th>
             <th>Banked Date</th>
             <th>PIV Submit Date</th>
-            <th>PIV No</th>
+            <th>Number of PIV</th>
             <th>AD Office Status</th>
             <th>DD Office Status</th>
             <th>Action</th>
@@ -1748,29 +1748,29 @@ function renderMy(){
       if(!k.startsWith('__') && !extQKeys.includes(k)) extQKeys.push(k);
     });
   });
-  document.getElementById('extMyThead').innerHTML = '<tr><th>Season</th><th>Main Program</th><th>Sub Program</th><th>Qty</th>' +
+  document.getElementById('extMyThead').innerHTML = '<tr><th>Season</th><th>Main Program</th><th>Sub Program</th><th>AI Officer</th><th>Qty</th>' +
     extQKeys.map(k => '<th>' + getQuestionLabelByKey(k) + '</th>').join('') + '<th>Date</th><th>Action</th></tr>';
 
   document.getElementById('extMyTbody').innerHTML = extRows.length ? extRows.map(r => {
     var dt = r.created_at ? new Date(r.created_at).toLocaleDateString() : '-';
-    return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-bold text-blue-700">' + getProgressedQtyForEntry(r) + '</td>' +
+    return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-semibold">' + getOfficerForEntry(r) + '</td><td class="font-bold text-blue-700">' + getProgressedQtyForEntry(r) + '</td>' +
       extQKeys.map(k => '<td>' + formatAnswerCell((r.answers||{})[k]) + '</td>').join('') +
       '<td class="text-xs text-slate-500">' + dt + '</td>' +
       '<td class="whitespace-nowrap"><button onclick="openMyEdit(\'' + r.id + '\',\'\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button><button onclick="deleteMyRow(\'' + r.id + '\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>';
-  }).join('') : '<tr><td colspan="' + (6 + extQKeys.length) + '" class="text-center py-6 text-slate-400">No Extension records found</td></tr>';
+  }).join('') : '<tr><td colspan="' + (7 + extQKeys.length) + '" class="text-center py-6 text-slate-400">No Extension records found</td></tr>';
 
   var devCols = getOrderedDevColumnsForMyData(devRows);
-  document.getElementById('devMyThead').innerHTML = '<tr><th>Year</th><th>Main Program</th><th>Sub Program</th><th>Item</th><th>Qty</th>' +
+  document.getElementById('devMyThead').innerHTML = '<tr><th>Year</th><th>Main Program</th><th>Sub Program</th><th>Item</th><th>AI Officer</th><th>Qty</th>' +
     devCols.map(c => '<th>' + c.title + '</th>').join('') + '<th>Date</th><th>Action</th></tr>';
 
   document.getElementById('devMyTbody').innerHTML = devRows.length ? devRows.map(r => {
     var dt = r.created_at ? new Date(r.created_at).toLocaleDateString() : '-';
     var safeIt = encodeURIComponent(r._singleItem || '');
-    return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-semibold">' + (r._singleItem||'-') + '</td><td class="font-bold text-emerald-700">' + (r._displayQty||0) + '</td>' +
+    return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-semibold">' + (r._singleItem||'-') + '</td><td class="font-semibold">' + getOfficerForEntry(r) + '</td><td class="font-bold text-emerald-700">' + (r._displayQty||0) + '</td>' +
       devCols.map(c => '<td>' + formatAnswerCell(getValFromCol(r.answers, c)) + '</td>').join('') +
       '<td class="text-xs text-slate-500">' + dt + '</td>' +
       '<td class="whitespace-nowrap"><button onclick="openMyEdit(\'' + r.id + '\',\'' + safeIt + '\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button><button onclick="deleteMyRow(\'' + r.id + '\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>';
-  }).join('') : '<tr><td colspan="' + (7 + devCols.length) + '" class="text-center py-6 text-slate-400">No Development records found</td></tr>';
+  }).join('') : '<tr><td colspan="' + (8 + devCols.length) + '" class="text-center py-6 text-slate-400">No Development records found</td></tr>';
 }
 
 function openMyEdit(id, itemEnc){
@@ -1952,7 +1952,8 @@ async function submitPivEntry(e){
     payment_amount: amt,
     banked_date: document.getElementById('pivBankedDate').value,
     piv_submit_date: document.getElementById('pivSubmitDate').value,
-    piv_no: document.getElementById('pivNumber').value,
+    no_of_piv: parseInt(document.getElementById('pivNumber').value,10)||0,
+    piv_no: parseInt(document.getElementById('pivNumber').value,10)||0,
     sub_office_id: mySubId,
     division: myDiv,
     office: myOffice,
@@ -1974,7 +1975,7 @@ function renderPivTable(){
   var myPivs = (pivRecords||[]).filter(p => !myDiv || norm(p.division) === norm(myDiv));
   document.getElementById('pivRecordsCount').textContent = myPivs.length;
   var tbody = document.getElementById('pivSubmissionsTbody');
-  tbody.innerHTML = myPivs.length ? myPivs.map(p => '<tr><td class="font-bold text-indigo-700">'+(p.auto_unit_no||'-')+'</td><td>'+(p.year||'-')+'</td><td>'+(p.main_program||'-')+'</td><td>'+(p.sub_program||'-')+'</td><td>'+(p.item_name||'-')+'</td><td class="text-right font-bold">'+(p.no_of_units||0)+'</td><td class="text-right font-bold">Rs. '+parseNum(p.payment_amount).toFixed(2)+'</td><td>'+(p.banked_date||'-')+'</td><td>'+(p.piv_submit_date||'-')+'</td><td class="font-semibold">'+(p.piv_no||'-')+'</td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">'+(p.ad_status||'Pending')+'</span></td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">'+(p.dd_status||'Pending')+'</span></td><td><button onclick="deletePivRow(\''+p.id+'\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>').join('') : '<tr><td colspan="13" class="text-center py-6 text-slate-400">No PIV records submitted</td></tr>';
+  tbody.innerHTML = myPivs.length ? myPivs.map(p => '<tr><td class="font-bold text-indigo-700">'+(p.auto_unit_no||'-')+'</td><td>'+(p.year||'-')+'</td><td>'+(p.main_program||'-')+'</td><td>'+(p.sub_program||'-')+'</td><td>'+(p.item_name||'-')+'</td><td class="text-right font-bold">'+(p.no_of_units||0)+'</td><td class="text-right font-bold">Rs. '+parseNum(p.payment_amount).toFixed(2)+'</td><td>'+(p.banked_date||'-')+'</td><td>'+(p.piv_submit_date||'-')+'</td><td class="font-semibold">'+(p.no_of_piv||p.piv_no||'-')+'</td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">'+(p.ad_approval_status||p.ad_status||'Pending')+'</span></td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">'+(p.dd_approval_status||p.main_admin_status||p.dd_status||'Pending')+'</span></td><td><button onclick="deletePivRow(\''+p.id+'\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>').join('') : '<tr><td colspan="13" class="text-center py-6 text-slate-400">No PIV records submitted</td></tr>';
 }
 async function deletePivRow(id){
   var ok = await profConfirm('Delete this PIV record?', 'Delete PIV');

@@ -55,7 +55,7 @@
   <nav class="mt-7 space-y-1 text-[14px]">
     <button data-nav="dashboard" onclick="goNav('dashboard')" class="nav-btn w-full text-left px-4 py-3 rounded-xl bg-white text-slate-900 font-semibold">🎯 Dashboard & Target Sheet</button>
     <button data-nav="targetset" onclick="goNav('targetset')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">📌 Target Set<br><span class="text-[11px] font-normal opacity-80">AI Office Targets Update</span></button>
-    <button data-nav="data" onclick="goNav('data')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">📊 දත්ත (Data & Excel)<br><span class="text-[11px] font-normal opacity-80">Extension & Dev Tables</span></button>
+    <button data-nav="data" onclick="goNav('data')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">📊 Data (Data & Excel)<br><span class="text-[11px] font-normal opacity-80">Extension & Dev Tables</span></button>
     <button data-nav="pivapproval" onclick="goNav('pivapproval')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">🧾 PIV APPROVAL<br><span class="text-[11px] font-normal opacity-80">AD Check & Submit to DD</span></button>
     <button data-nav="pricelist" onclick="goNav('pricelist')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-slate-300 hover:bg-white/10">💰 View Item Price List<br><span class="text-[11px] font-normal opacity-80">Admin Price List & Excel</span></button>
   </nav>
@@ -76,7 +76,7 @@
     </div>
     <div class="flex items-center gap-2">
       <button onclick="sbSyncAll()" class="btn btn-ghost px-2.5 py-1 text-xs">↻ Sync</button>
-      <span id="sbStatus" class="text-[11px] px-2 py-1 rounded bg-slate-100">Syncing...</span>
+      <span id="sbStatus" class="text-[11px] px-2 py-1 rounded bg-slate-100">Syncing...</span><button onclick="logout()" class="btn btn-ghost text-red-600 px-3 py-2 text-xs">Logout</button>
     </div>
   </div>
 
@@ -681,9 +681,28 @@ function getProgressedQty(r){
   return 0;
 }
 
+function getProgressedQtyForTargetItem(r, itemName){
+  var ans=(r&&r.answers&&typeof r.answers==='object')?r.answers:{};
+  if(itemName && ans.__per_item_qty && typeof ans.__per_item_qty==='object'){
+    var key=Object.keys(ans.__per_item_qty).find(k=>norm(k)===norm(itemName));
+    if(key!==undefined) return Number(ans.__per_item_qty[key])||0;
+  }
+  if(itemName && Array.isArray(ans.__selected_items) && ans.__selected_items.length>1 && ans.__progress_qty!==undefined){
+    return Number(ans.__progress_qty)/ans.__selected_items.length||0;
+  }
+  return getProgressedQty(r);
+}
+
 function getItemName(r){
   if(r && r.answers && r.answers.__item_name) return String(r.answers.__item_name);
   return '';
+}
+
+function getOfficerNameForResponse(r){
+  var ans=(r&&r.answers&&typeof r.answers==='object')?r.answers:{};
+  if(ans.__officer_name) return String(ans.__officer_name);
+  var p=(profiles||[]).find(x=>x && (norm(x.division)===norm(r.division) || norm(x.office)===norm(r.office)));
+  return p ? (p.officer_name || p.name || p.full_name || '-') : '-';
 }
 
 function getMyResponses(){
@@ -719,7 +738,7 @@ function goNav(p){
     renderTargetSetFilters();
     renderTargetSetList();
   } else if(p==='data'){
-    document.getElementById('pageTitle').textContent='දත්ත (Data & Excel)';
+    document.getElementById('pageTitle').textContent='Data (Data & Excel)';
     populateDataFilters();
     renderDataSection();
   } else if(p==='pivapproval'){
@@ -834,9 +853,9 @@ function buildAdTargetRows(){
       if(t.level1 && norm(r.level1) !== norm(t.level1)) return false;
       if(t.level2 && norm(r.level2) !== norm(t.level2)) return false;
       if(t.level3 && norm(r.level3) !== norm(t.level3)) return false;
-      if(t.item_name && norm(getItemName(r)) !== norm(t.item_name)) return false;
+      if(t.item_name){ var sel=(r.answers&&Array.isArray(r.answers.__selected_items)&&r.answers.__selected_items.length)?r.answers.__selected_items:[getItemName(r)]; if(!sel.map(norm).includes(norm(t.item_name))) return false; }
       return true;
-    }).reduce((s, r) => s + getProgressedQty(r), 0);
+    }).reduce((s, r) => s + (t.item_name ? getProgressedQtyForTargetItem(r,t.item_name) : getProgressedQty(r)), 0);
 
     aiRows.push({
       target_id: t.id,
@@ -1246,7 +1265,7 @@ function renderTargetTables(){
       '<td class="text-center font-semibold text-amber-700">' + rem + '</td>' +
       '<td class="text-center font-bold text-indigo-700">' + pct + '%</td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="8" class="text-center py-5 text-slate-400 text-xs">Development Target தரவுகள் இல்லை</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="text-center py-5 text-slate-400 text-xs">No Development Target data</td></tr>';
 }
 
 function downloadTargetTableExcel(type){
@@ -1590,41 +1609,117 @@ function onDevDataFilterChange(level){
   renderDataSection();
 }
 
+// Resolve answer keys to the actual question text, including composite legacy/custom keys.
+function getQuestionLabelByKey(key, sampleVal, row){
+  if(!key) return '';
+  var k=String(key);
+  if(norm(k)==='tpl_contrib' || norm(k).startsWith('__item_contrib_')) return 'ගොවි දායකත්වය';
+  var tokens=k.match(/\d+/g)||[];
+  var rowNode=row && row.node_id!==undefined ? String(row.node_id) : '';
+  var candidates=(questions||[]).filter(function(q){
+    if(!q || !q.question_text) return false;
+    var qidTokens=String(q.id||'').match(/\d+/g)||[];
+    var exactId=String(q.id)===k || (qidTokens.length && tokens.includes(qidTokens[qidTokens.length-1]));
+    return exactId;
+  });
+  if(/^q_n_/i.test(k) && tokens.length>=3){
+    var orderTokens=tokens.slice(1,-1);
+    var scoped=(questions||[]).find(function(q){
+      return q && q.question_text && rowNode && String(q.node_id||'')===rowNode && orderTokens.includes(String(q.order_index||''));
+    });
+    if(scoped) return scoped.question_text;
+    var nodeScoped=(questions||[]).find(function(q){
+      return q && q.question_text && String(q.node_id||'')===tokens[0] && orderTokens.includes(String(q.order_index||''));
+    });
+    if(nodeScoped) return nodeScoped.question_text;
+  }
+  if(candidates.length){
+    if(rowNode){
+      var scopedCandidate=candidates.find(function(q){return String(q.node_id||'')===rowNode;});
+      if(scopedCandidate) return scopedCandidate.question_text;
+    }
+    return candidates[0].question_text;
+  }
+  var valStr=Array.isArray(sampleVal)?sampleVal.join(', '):String(sampleVal||'');
+  if(valStr.includes('ගොවි දායකත්වය')) return 'ගොවි දායකත්වය';
+  return k;
+}
+
+
 function buildQuestionColumns(list){
-  var qMap = new Map();
-  list.forEach(r => {
-    var qs = (questions||[]).filter(q => String(q.node_id) === String(r.node_id)).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
-    qs.forEach(q => {
-      if(!qMap.has(q.question_text)) qMap.set(q.question_text, []);
-      if(!qMap.get(q.question_text).includes(q.id)) qMap.get(q.question_text).push(q.id);
+  var qMap=new Map();
+  function add(title,key){
+    if(!title) return;
+    if(!qMap.has(title)) qMap.set(title,[]);
+    if(key!==undefined && key!==null && !qMap.get(title).includes(key)) qMap.get(title).push(key);
+  }
+  list.forEach(function(r){
+    var rowQuestions=(questions||[]).filter(function(q){return q && String(q.node_id)===String(r.node_id);}).sort(function(a,b){return (a.order_index||0)-(b.order_index||0);});
+    rowQuestions.forEach(function(q){add(q.question_text,q.id);});
+    Object.keys(r.answers||{}).forEach(function(k){
+      if(k.startsWith('__')) return;
+      var title=getQuestionLabelByKey(k,(r.answers||{})[k],r);
+      var qMatch=rowQuestions.find(function(q){return q.question_text===title;});
+      // Store the actual answer key as well as metadata IDs; answer values may
+      // be persisted under a composite key rather than q.id.
+      add(title || k,k);
+      if(qMatch) add(qMatch.question_text,qMatch.id);
     });
   });
   return qMap;
 }
 
+function expandSubadminDevelopmentRows(list){
+  var out=[];
+  list.forEach(function(r){
+    var ans=(r && r.answers && typeof r.answers==='object')?r.answers:{};
+    var items=Array.isArray(ans.__selected_items)?ans.__selected_items.filter(Boolean):[];
+    if(!items.length && ans.__item_name) items=[ans.__item_name];
+    if(items.length<=1){
+      var item=items[0] || ans.__item_name || '-';
+      var merged=Object.assign({},ans,{__item_name:item});
+      if(ans.__item_specific && ans.__item_specific[item]) Object.assign(merged,ans.__item_specific[item]);
+      if(ans.__item_quantities && ans.__item_quantities[item]!==undefined) merged.__progress_qty=ans.__item_quantities[item];
+      var singleQty=(ans.__item_quantities && ans.__item_quantities[item]!==undefined)?Number(ans.__item_quantities[item]):(ans.__per_item_qty && ans.__per_item_qty[item]!==undefined?Number(ans.__per_item_qty[item]):getProgressedQty(r));
+      out.push(Object.assign({},r,{answers:merged,__display_item:item,__display_qty:singleQty}));
+      return;
+    }
+    items.forEach(function(item){
+      var merged=Object.assign({},ans);
+      delete merged.__item_specific;
+      merged.__item_name=item;
+      if(ans.__item_specific && ans.__item_specific[item]) Object.assign(merged,ans.__item_specific[item]);
+      if(ans.__item_quantities && ans.__item_quantities[item]!==undefined) merged.__progress_qty=ans.__item_quantities[item];
+      else if(ans.__per_item_qty && ans.__per_item_qty[item]!==undefined) merged.__progress_qty=ans.__per_item_qty[item];
+      else if(ans.__progress_qty!==undefined) merged.__progress_qty=Number(ans.__progress_qty)/items.length;
+      out.push(Object.assign({},r,{answers:merged,__display_item:item,__display_qty:Number(merged.__progress_qty)||0}));
+    });
+  });
+  return out;
+}
+
 function renderResponseCategoryTable(list, theadId, tbodyId, countId){
-  if(countId) document.getElementById(countId).textContent = list.length;
-  var qMap = buildQuestionColumns(list);
+  var isDevelopment = tbodyId === 'devRespTbody';
+  var displayList = isDevelopment ? expandSubadminDevelopmentRows(list) : list;
+  if(countId) document.getElementById(countId).textContent = displayList.length;
+  var qMap = buildQuestionColumns(displayList);
   var headers = Array.from(qMap.keys());
 
   document.getElementById(theadId).innerHTML = '<tr>' +
-    '<th>Date</th>' +
-    '<th>AI Range</th>' +
-    '<th>Program</th>' +
-    '<th>Sub Program / Item</th>' +
-    '<th>Progress Qty</th>' +
+    (isDevelopment ? '<th>Year</th><th>Main Program</th><th>Sub Program</th><th>Item</th><th>AI Officer</th><th>Qty</th>' : '<th>Date</th><th>AI Range</th><th>Program</th><th>Sub Program / Item</th><th>AI Officer</th><th>Progress Qty</th>') +
     headers.map(h => '<th>' + h + '</th>').join('') +
     '<th>Action</th>' +
   '</tr>';
 
-  if(!list.length){
-    document.getElementById(tbodyId).innerHTML = '<tr><td colspan="' + (6 + headers.length) + '" class="text-center py-5 text-slate-400 text-xs">No Data</td></tr>';
+  if(!displayList.length){
+    document.getElementById(tbodyId).innerHTML = '<tr><td colspan="' + (isDevelopment ? 8 + headers.length : 7 + headers.length) + '" class="text-center py-5 text-slate-400 text-xs">No Data</td></tr>';
     return { headers, qMap };
   }
 
-  document.getElementById(tbodyId).innerHTML = list.map(r => {
-    var qty = getProgressedQty(r);
-    var itemN = getItemName(r);
+
+  document.getElementById(tbodyId).innerHTML = displayList.map(r => {
+    var qty = isDevelopment ? (r.__display_qty!==undefined ? r.__display_qty : getProgressedQty(r)) : getProgressedQty(r);
+    var itemN = isDevelopment ? (r.__display_item || getItemName(r) || '-') : getItemName(r);
     var subItem = [r.level3, itemN].filter(Boolean).join(' — ') || '-';
 
     var ansCells = headers.map(hText => {
@@ -1641,12 +1736,11 @@ function renderResponseCategoryTable(list, theadId, tbodyId, countId){
     }).join('');
 
     return '<tr>' +
-      '<td class="text-xs whitespace-nowrap">' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>' +
-      '<td class="text-xs font-bold">' + (r.division || '-') + '</td>' +
-      '<td class="text-xs font-semibold">' + (r.level2 || '-') + '</td>' +
-      '<td class="text-xs">' + subItem + '</td>' +
+      (isDevelopment ? '<td class="text-xs">'+(r.level1||'-')+'</td><td class="text-xs font-semibold">'+(r.level2||'-')+'</td><td class="text-xs">'+(r.level3||'-')+'</td><td class="text-xs">'+itemN+'</td>' : '<td class="text-xs whitespace-nowrap">'+(r.created_at ? new Date(r.created_at).toLocaleDateString() : '')+'</td><td class="text-xs font-bold">'+(r.division||'-')+'</td><td class="text-xs font-semibold">'+(r.level2||'-')+'</td><td class="text-xs">'+subItem+'</td>') +
+      '<td class="text-xs font-semibold">' + getOfficerNameForResponse(r) + '</td>' +
       '<td class="text-xs font-bold text-emerald-700 text-center">' + qty + '</td>' +
       ansCells +
+      (isDevelopment ? '<td class="text-xs whitespace-nowrap">'+(r.created_at ? new Date(r.created_at).toLocaleDateString() : '')+'</td>' : '') +
       '<td class="whitespace-nowrap">' +
         '<button onclick="editResponse(\'' + r.id + '\')" class="btn btn-ghost px-2 py-1 text-xs">Edit</button> ' +
         '<button onclick="delResponse(\'' + r.id + '\')" class="text-red-500 text-xs px-2">Delete</button>' +
@@ -1688,9 +1782,13 @@ function renderDataSection(){
     (!dYr   || norm(r.level1) === norm(dYr)) &&
     (!dMain || norm(r.level2) === norm(dMain)) &&
     (!dSub  || norm(r.level3) === norm(dSub)) &&
-    (!dItem || norm(getItemName(r)) === norm(dItem)) &&
     (!dAi   || norm(r.division) === norm(dAi))
-  );
+  ).filter(function(r){
+    if(!dItem) return true;
+    var a=(r.answers||{}), items=Array.isArray(a.__selected_items)?a.__selected_items.filter(Boolean):[];
+    if(!items.length && a.__item_name) items=[a.__item_name];
+    return items.some(function(it){return norm(it)===norm(dItem);});
+  });
 
   window.saExtMeta = renderResponseCategoryTable(extList, 'extRespThead', 'extRespTbody', 'extRespCount');
   window.saDevMeta = renderResponseCategoryTable(devList, 'devRespThead', 'devRespTbody', 'devRespCount');
@@ -1871,7 +1969,7 @@ function renderPivApprovalTable(){
   var tbody = document.getElementById('pivApprovalTbody');
   if(!tbody) return;
   if(!filtered.length){
-    tbody.innerHTML = '<tr><td colspan="14" class="text-center py-6 text-slate-400 text-xs">PIV தரவுகள் எதுவும் இல்லை</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="text-center py-6 text-slate-400 text-xs">No PIV records found</td></tr>';
     return;
   }
 
@@ -1935,7 +2033,7 @@ async function approvePivToDdOffice(id){
 function downloadPivApprovalExcel(){
   if(typeof XLSX === 'undefined') return showToast('Excel library load ஆகவில்லை', false);
   var rows = window.currentFilteredPivApproval || [];
-  if(!rows.length) return showToast('Download කිරීමට PIV தரவுகள் இல்லை', false);
+  if(!rows.length) return showToast('No PIV data available for download', false);
 
   var exportData = rows.map(r => ({
     'Auto Unit No': r.auto_unit_no || '-',
