@@ -643,6 +643,24 @@ const BOX_COLORS = [
   { border: 'border-orange-300', bg: 'bg-orange-50/70', badge: 'bg-orange-600 text-white', bar: 'bg-orange-500', title: 'text-orange-950' }
 ];
 
+const DEV_DEFAULT_QUESTIONS = [
+  { text: 'මුලකුරු සහිත නම', type: 'short_text', options: [], required: true },
+  { text: 'ලිපිනය', type: 'short_text', options: [], required: true },
+  { text: 'දුරකථන අංකය', type: 'number', options: [], required: true },
+  { text: 'ජාතික හැදුනුම්පත් අංකය', type: 'short_text', options: [], required: true },
+  { text: 'ගොවි දායකත්වය', type: 'multiple_choice', options: ['නොමිලේ', 'ගොවි දායකත්වය - 25%', 'ගොවි දායකත්වය - 50%'], required: true },
+  { text: 'සටහන්', type: 'short_text', options: [], required: false }
+];
+
+const DEV_FIXED_ORDER_TITLES = [
+  'මුලකුරු සහිත නම',
+  'ලිපිනය',
+  'දුරකථන අංකය',
+  'ජාතික හැදුනුම්පත් අංකය',
+  'ගොවි දායකත්වය',
+  'සටහන්'
+];
+
 var nodes=[], questions=[], responses=[], targetRecords=[], profiles=[], itemPrices=[], pivRecords=[];
 var showAllExtBoxes=false, showAllDevBoxes=false, showAllExtTbl=false, showAllDevTbl=false, editingId=null;
 var PIV_STORAGE_KEY = 'fw_piv_submissions_v1';
@@ -1559,7 +1577,6 @@ function populateDataFilters(){
   var extMine = mine.filter(r => norm(r.main_type) === 'extension');
   var devMine = mine.filter(r => norm(r.main_type) === 'development');
 
-  // Extension filters: Session, Main Program, Sub Program, AI Office
   populateSelectPreserve('extDataSession', [...new Set(extMine.map(r=>r.level1).filter(Boolean))], 'All Sessions');
   var eSes = document.getElementById('extDataSession').value;
   var eMainSrc = eSes ? extMine.filter(r=>norm(r.level1)===norm(eSes)) : extMine;
@@ -1569,7 +1586,6 @@ function populateDataFilters(){
   populateSelectPreserve('extDataSubProg', [...new Set(eSubSrc.map(r=>r.level3).filter(Boolean))], 'All Sub Programs');
   populateSelectPreserve('extDataAiOffice', aiList, 'All AI Offices');
 
-  // Development filters: Year, Main Program, Sub Program, Item, AI Office
   populateSelectPreserve('devDataYear', [...new Set(devMine.map(r=>r.level1).filter(Boolean))], 'All Years');
   var dYr = document.getElementById('devDataYear').value;
   var dMainSrc = dYr ? devMine.filter(r=>norm(r.level1)===norm(dYr)) : devMine;
@@ -1609,63 +1625,178 @@ function onDevDataFilterChange(level){
   renderDataSection();
 }
 
-// Resolve answer keys to the actual question text, including composite legacy/custom keys.
+function getQText(q){
+  if(!q) return '';
+  return String(q.question_text || q.text || q.title || q.label || '').trim();
+}
+
 function getQuestionLabelByKey(key, sampleVal, row){
   if(!key) return '';
-  var k=String(key);
-  if(norm(k)==='tpl_contrib' || norm(k).startsWith('__item_contrib_')) return 'ගොවි දායකත්වය';
-  var tokens=k.match(/\d+/g)||[];
-  var rowNode=row && row.node_id!==undefined ? String(row.node_id) : '';
-  var candidates=(questions||[]).filter(function(q){
-    if(!q || !q.question_text) return false;
-    var qidTokens=String(q.id||'').match(/\d+/g)||[];
-    var exactId=String(q.id)===k || (qidTokens.length && tokens.includes(qidTokens[qidTokens.length-1]));
-    return exactId;
+  var k = String(key).trim();
+  var kLower = k.toLowerCase();
+
+  if(kLower === 'tpl_contrib' || kLower.startsWith('__item_contrib_')) return 'ගොවි දායකත්වය';
+
+  var allQs = Array.isArray(questions) ? questions : [];
+  var getTxt = function(q){
+    return q ? String(q.question_text || q.text || q.title || q.label || '').trim() : '';
+  };
+
+  var kClean = k.replace(/^q_/i, '');
+
+  // 1. Direct or 'q_'-stripped ID match in questions
+  var directQ = allQs.find(function(q){
+    if(!q || q.id === undefined || q.id === null) return false;
+    var qid = String(q.id).trim();
+    return qid === k || qid === kClean || qid.replace(/^q_/i, '') === kClean;
   });
-  if(/^q_n_/i.test(k) && tokens.length>=3){
-    var orderTokens=tokens.slice(1,-1);
-    var scoped=(questions||[]).find(function(q){
-      return q && q.question_text && rowNode && String(q.node_id||'')===rowNode && orderTokens.includes(String(q.order_index||''));
-    });
-    if(scoped) return scoped.question_text;
-    var nodeScoped=(questions||[]).find(function(q){
-      return q && q.question_text && String(q.node_id||'')===tokens[0] && orderTokens.includes(String(q.order_index||''));
-    });
-    if(nodeScoped) return nodeScoped.question_text;
+  if(directQ && getTxt(directQ)) return getTxt(directQ);
+
+  // 2. Last segment match (e.g. 1795665069454, 1795665109461, 1795741980190)
+  var parts = k.split('_').filter(Boolean);
+  var lastPart = parts.length ? parts[parts.length - 1] : k;
+  var lastClean = String(lastPart).replace(/^q_/i, '');
+
+  var byLast = allQs.find(function(q){
+    if(!q || q.id === undefined || q.id === null) return false;
+    var qid = String(q.id).trim();
+    var qidClean = qid.replace(/^q_/i, '');
+    return qid === lastPart || qidClean === lastClean || qid.endsWith('_' + lastClean);
+  });
+  if(byLast && getTxt(byLast)) return getTxt(byLast);
+
+  // 3. Match by node_id inside key or row.node_id
+  var qnMatch = k.match(/^(?:q_dev_n|q_n)_([^_]+)_(.+)$/i);
+  var candidateNodeIds = [];
+  if(qnMatch){
+    var nPart = String(qnMatch[1]).trim();
+    candidateNodeIds.push(nPart, 'n_' + nPart, nPart.replace(/^n_/i, ''));
   }
-  if(candidates.length){
-    if(rowNode){
-      var scopedCandidate=candidates.find(function(q){return String(q.node_id||'')===rowNode;});
-      if(scopedCandidate) return scopedCandidate.question_text;
+  if(row && row.node_id){
+    var rNode = String(row.node_id).trim();
+    candidateNodeIds.push(rNode, 'n_' + rNode, rNode.replace(/^n_/i, ''));
+  }
+  candidateNodeIds = [...new Set(candidateNodeIds.filter(Boolean))];
+
+  if(candidateNodeIds.length){
+    var nodeQs = allQs.filter(function(q){
+      if(!q || q.node_id === undefined || q.node_id === null) return false;
+      var qn = String(q.node_id).trim();
+      return candidateNodeIds.includes(qn) || candidateNodeIds.includes(qn.replace(/^n_/i, ''));
+    }).sort(function(a,b){ return (a.order_index||0) - (b.order_index||0); });
+
+    if(nodeQs.length){
+      var byIdInNode = nodeQs.find(function(q){
+        var qidClean = String(q.id || '').trim().replace(/^q_/i, '');
+        return qidClean === lastClean || String(q.id).trim() === lastPart || k.includes(String(q.id).trim());
+      });
+      if(byIdInNode && getTxt(byIdInNode)) return getTxt(byIdInNode);
+
+      var idxNum = parseInt(lastClean, 10);
+      if(!isNaN(idxNum)){
+        var byOrd = nodeQs.find(function(q){ return Number(q.order_index) === idxNum; });
+        if(byOrd && getTxt(byOrd)) return getTxt(byOrd);
+        if(idxNum >= 1 && idxNum <= nodeQs.length && getTxt(nodeQs[idxNum - 1])){
+          return getTxt(nodeQs[idxNum - 1]);
+        }
+      }
     }
-    return candidates[0].question_text;
   }
-  var valStr=Array.isArray(sampleVal)?sampleVal.join(', '):String(sampleVal||'');
-  if(valStr.includes('ගොවි දායකත්වය')) return 'ගොවි දායකත්වය';
-  return k;
+
+  // 4. Any numeric token match against question id
+  var numTokens = k.match(/\d+/g) || [];
+  for(var i = numTokens.length - 1; i >= 0; i--){
+    var tok = numTokens[i];
+    var qByTok = allQs.find(function(q){
+      if(!q || q.id === undefined || q.id === null) return false;
+      var qidClean = String(q.id).trim().replace(/^q_/i, '');
+      return qidClean === tok || String(q.id).trim() === tok;
+    });
+    if(qByTok && getTxt(qByTok)) return getTxt(qByTok);
+  }
+
+  // 5. Default template index fallback
+  var tplDefMatch = k.match(/^tpl_def_(\d+)$/i);
+  if(tplDefMatch){
+    var dIdx = parseInt(tplDefMatch[1], 10);
+    if(DEV_DEFAULT_QUESTIONS[dIdx]) return DEV_DEFAULT_QUESTIONS[dIdx].text;
+  }
+
+  if(!/^q_(?:dev_)?n_/i.test(k)){
+    var qMatch = k.match(/_(\d+)$/);
+    if(qMatch){
+      var idx = parseInt(qMatch[1], 10) - 1;
+      if(idx >= 0 && idx < DEV_DEFAULT_QUESTIONS.length) return DEV_DEFAULT_QUESTIONS[idx].text;
+    }
+  }
+
+  var valStr = Array.isArray(sampleVal) ? sampleVal.join(', ') : String(sampleVal || '');
+  if(valStr.includes('නොමිලේ') || valStr.includes('ගොවි දායකත්වය')) return 'ගොවි දායකත්වය';
+
+  // 6. Clean fallback without 'අමතර ප්‍රශ්නය'
+  var tailIdx = parseInt(lastClean, 10);
+  if(!isNaN(tailIdx) && tailIdx >= 1 && tailIdx <= DEV_FIXED_ORDER_TITLES.length){
+    return DEV_FIXED_ORDER_TITLES[tailIdx - 1];
+  }
+
+  return 'විස්තර (' + lastClean + ')';
+}
+
+function formatAnswerCell(val){
+  if(val === undefined || val === null || val === '') return '-';
+  if(Array.isArray(val)) return val.length ? val.join(', ') : '-';
+  return String(val);
 }
 
 
-function buildQuestionColumns(list){
-  var qMap=new Map();
-  function add(title,key){
-    if(!title) return;
-    if(!qMap.has(title)) qMap.set(title,[]);
-    if(key!==undefined && key!==null && !qMap.get(title).includes(key)) qMap.get(title).push(key);
+function buildQuestionColumns(list, isDevelopment){
+  var qMap = new Map();
+
+  if(isDevelopment){
+    DEV_FIXED_ORDER_TITLES.forEach(function(title){
+      qMap.set(norm(title), { title: title, keys: [] });
+    });
   }
-  list.forEach(function(r){
-    var rowQuestions=(questions||[]).filter(function(q){return q && String(q.node_id)===String(r.node_id);}).sort(function(a,b){return (a.order_index||0)-(b.order_index||0);});
-    rowQuestions.forEach(function(q){add(q.question_text,q.id);});
-    Object.keys(r.answers||{}).forEach(function(k){
+
+  function add(title, key){
+    var cleanTitle = String(title || '').trim();
+    if(!cleanTitle) return;
+    var nk = norm(cleanTitle);
+    if(!qMap.has(nk)) qMap.set(nk, { title: cleanTitle, keys: [] });
+    var entry = qMap.get(nk);
+    if(key !== undefined && key !== null && !entry.keys.includes(key)) entry.keys.push(key);
+  }
+
+  (list || []).forEach(function(r){
+    var ans = (r && r.answers && typeof r.answers === 'object') ? r.answers : {};
+    var itemName = r.__display_item || ans.__item_name || '';
+
+    var matchedItemNode = (nodes || []).find(function(n){
+      return n && Number(n.level) === 4 && norm(n.title) === norm(itemName);
+    });
+
+    var targetNodeIds = [String(r.node_id || '').trim()].filter(Boolean);
+    if(matchedItemNode && matchedItemNode.id){
+      var itemNodeIdStr = String(matchedItemNode.id).trim();
+      if(!targetNodeIds.includes(itemNodeIdStr)) targetNodeIds.push(itemNodeIdStr);
+    }
+
+    var rowQuestions = (questions || []).filter(function(q){
+      return q && targetNodeIds.includes(String(q.node_id || '').trim());
+    }).sort(function(a,b){ return (a.order_index||0) - (b.order_index||0); });
+
+    rowQuestions.forEach(function(q){
+      var qt = String(q.question_text || q.text || q.title || q.label || '').trim();
+      add(qt, q.id);
+    });
+
+    Object.keys(ans).forEach(function(k){
       if(k.startsWith('__')) return;
-      var title=getQuestionLabelByKey(k,(r.answers||{})[k],r);
-      var qMatch=rowQuestions.find(function(q){return q.question_text===title;});
-      // Store the actual answer key as well as metadata IDs; answer values may
-      // be persisted under a composite key rather than q.id.
-      add(title || k,k);
-      if(qMatch) add(qMatch.question_text,qMatch.id);
+      var title = getQuestionLabelByKey(k, ans[k], r);
+      add(title || k, k);
     });
   });
+
   return qMap;
 }
 
@@ -1702,12 +1833,14 @@ function renderResponseCategoryTable(list, theadId, tbodyId, countId){
   var isDevelopment = tbodyId === 'devRespTbody';
   var displayList = isDevelopment ? expandSubadminDevelopmentRows(list) : list;
   if(countId) document.getElementById(countId).textContent = displayList.length;
-  var qMap = buildQuestionColumns(displayList);
-  var headers = Array.from(qMap.keys());
+  var qMap = buildQuestionColumns(displayList, isDevelopment);
+  var orderedEntries = Array.from(qMap.values());
+  var headers = orderedEntries.map(function(colObj){ return colObj.title; });
 
   document.getElementById(theadId).innerHTML = '<tr>' +
     (isDevelopment ? '<th>Year</th><th>Main Program</th><th>Sub Program</th><th>Item</th><th>AI Officer</th><th>Qty</th>' : '<th>Date</th><th>AI Range</th><th>Program</th><th>Sub Program / Item</th><th>AI Officer</th><th>Progress Qty</th>') +
     headers.map(h => '<th>' + h + '</th>').join('') +
+    (isDevelopment ? '<th>Date</th>' : '') +
     '<th>Action</th>' +
   '</tr>';
 
@@ -1716,14 +1849,13 @@ function renderResponseCategoryTable(list, theadId, tbodyId, countId){
     return { headers, qMap };
   }
 
-
   document.getElementById(tbodyId).innerHTML = displayList.map(r => {
     var qty = isDevelopment ? (r.__display_qty!==undefined ? r.__display_qty : getProgressedQty(r)) : getProgressedQty(r);
     var itemN = isDevelopment ? (r.__display_item || getItemName(r) || '-') : getItemName(r);
     var subItem = [r.level3, itemN].filter(Boolean).join(' — ') || '-';
 
-    var ansCells = headers.map(hText => {
-      var ids = qMap.get(hText) || [];
+    var ansCells = orderedEntries.map(colObj => {
+      var ids = colObj.keys || [];
       var val = '';
       for(var i=0; i<ids.length; i++){
         if(r.answers && r.answers[ids[i]] !== undefined && r.answers[ids[i]] !== ''){
@@ -1812,7 +1944,8 @@ function mapRowsWithSeparateCols(list, meta){
       'Progress Qty': getProgressedQty(r)
     };
     headers.forEach(hText => {
-      var ids = qMap.get(hText) || [];
+      var colObj = qMap.get(norm(hText));
+      var ids = (colObj && colObj.keys) || [];
       var val = '';
       for(var i=0; i<ids.length; i++){
         if(r.answers && r.answers[ids[i]] !== undefined && r.answers[ids[i]] !== ''){
@@ -2216,6 +2349,68 @@ async function logout(){
   window.location.replace('index.html');
 }
 
+/* Fetch every row of a table (Supabase returns at most 1000 rows per request). */
+async function sbFetchAllRows(table, orderCols){
+  var out = [], from = 0, step = 1000;
+  while(true){
+    var q = sb.from(table).select('*');
+    (orderCols || []).forEach(function(c){ q = q.order(c); });
+    var res = await q.range(from, from + step - 1);
+    if(res.error) return { data: null, error: res.error };
+    var chunk = Array.isArray(res.data) ? res.data : [];
+    out = out.concat(chunk);
+    if(chunk.length < step) break;
+    from += step;
+  }
+  return { data: out, error: null };
+}
+
+/* Collect every answer key used by saved responses (incl. per-item answers). */
+function collectResponseAnswerKeys(){
+  var keys = new Set();
+  (responses || []).forEach(function(r){
+    var ans = (r && r.answers && typeof r.answers === 'object') ? r.answers : {};
+    Object.keys(ans).forEach(function(k){ if(!k.startsWith('__')) keys.add(k); });
+    var sp = ans.__item_specific;
+    if(sp && typeof sp === 'object'){
+      Object.keys(sp).forEach(function(item){
+        var o = sp[item];
+        if(o && typeof o === 'object') Object.keys(o).forEach(function(k){ if(!k.startsWith('__')) keys.add(k); });
+      });
+    }
+  });
+  return Array.from(keys);
+}
+
+/* Any custom question that a saved answer points to but that is not in `questions`
+   (e.g. cut off by the row limit) is fetched directly by id so its header text resolves. */
+async function hydrateMissingQuestions(){
+  if(!sb) return;
+  try{
+    var have = new Set((questions || []).map(function(q){ return String(q.id).trim(); }));
+    var missing = new Set();
+    collectResponseAnswerKeys().forEach(function(k){
+      var key = String(k).trim();
+      if(!key || /^tpl_/i.test(key) || key.toLowerCase().startsWith('__item_contrib_')) return;
+      var parts = key.split('_').filter(Boolean);
+      var last = parts.length ? parts[parts.length - 1] : key;
+      var cands = [key, key.replace(/^q_/i, ''), last];
+      var found = cands.some(function(c){ return have.has(c) || have.has('q_' + c); });
+      if(!found) cands.forEach(function(c){ if(c) missing.add(c); });
+    });
+    var ids = Array.from(missing);
+    for(var i = 0; i < ids.length; i += 100){
+      var res = await sb.from('questions').select('*').in('id', ids.slice(i, i + 100));
+      if(res && !res.error && Array.isArray(res.data)){
+        res.data.forEach(function(q){
+          var qid = String(q.id).trim();
+          if(!have.has(qid)){ questions.push(q); have.add(qid); }
+        });
+      }
+    }
+  }catch(e){ console.warn('hydrateMissingQuestions failed', e); }
+}
+
 async function sbSyncAll(){
   if(window.__fwAuthReady && !(await window.__fwAuthReady)) return;
   var st = document.getElementById('sbStatus');
@@ -2236,7 +2431,7 @@ async function sbSyncAll(){
     if(st) st.textContent='Syncing...';
     var [nRes, qRes, rRes, tRes, pRes, ipRes, pivRes] = await Promise.all([
       sb.from('nodes').select('*').order('sort_order'),
-      sb.from('questions').select('*').order('order_index'),
+      sbFetchAllRows('questions', ['order_index','id']),
       sb.from('responses').select('*').order('created_at', { ascending: false }),
       sb.from('targets').select('*'),
       sb.from('profiles').select('*'),
@@ -2257,6 +2452,7 @@ async function sbSyncAll(){
     } else {
       pivRecords = loadLocalPivRecords();
     }
+    await hydrateMissingQuestions();
     if(st) st.textContent='Connected ✓';
   }catch(e){
     pivRecords = loadLocalPivRecords();

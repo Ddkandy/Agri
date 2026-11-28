@@ -351,6 +351,20 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
         <label class="text-[11px] font-semibold text-slate-500">Search</label>
         <input id="mySearch" placeholder="Search..." oninput="renderMy()" class="mt-1 bg-white text-xs">
       </div>
+      <div>
+        <label class="text-[11px] font-semibold text-blue-700">Extension – Data Updated Month(s)</label>
+        <select id="myFilterExtMonths" multiple size="3" onchange="renderMy()" class="mt-1 bg-white text-xs w-full">
+          <option value="">All Months</option>
+        </select>
+        <p class="text-[10px] text-slate-500 mt-1">Select one or more months (Ctrl / long press).</p>
+      </div>
+      <div>
+        <label class="text-[11px] font-semibold text-emerald-700">Development – Data Updated Month(s)</label>
+        <select id="myFilterDevMonths" multiple size="3" onchange="renderMy()" class="mt-1 bg-white text-xs w-full">
+          <option value="">All Months</option>
+        </select>
+        <p class="text-[10px] text-slate-500 mt-1">Select one or more months (Ctrl / long press).</p>
+      </div>
     </div>
   </div>
 
@@ -506,7 +520,8 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
         </div>
       </div>
 
-      <div class="flex justify-end">
+      <div class="flex flex-wrap justify-end gap-2">
+        <button type="button" id="pivCancelEditBtn" onclick="cancelPivEdit()" class="btn btn-ghost px-5 py-3 text-sm hidden">Cancel Edit</button>
         <button type="submit" id="pivSubmitBtn" class="btn btn-primary px-6 py-3 text-sm">💾 Submit PIV & Generate Unit Number</button>
       </div>
     </form>
@@ -514,7 +529,10 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
 
   <div class="card space-y-3">
     <div class="flex flex-wrap justify-between items-center gap-2">
-      <h3 class="font-bold text-base text-slate-900">📋 Submitted PIV Records (<span id="pivRecordsCount">0</span>)</h3>
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="font-bold text-base text-slate-900">📋 Submitted PIV Records (<span id="pivRecordsCount">0</span>)</h3>
+        <button type="button" onclick="downloadPivExcel()" class="btn btn-primary text-xs px-3 py-2">⬇ Download PIV Excel</button>
+      </div>
       <span class="text-xs text-slate-500">AD Office & DD Office Approval Status</span>
     </div>
     <div class="table-wrap">
@@ -533,7 +551,7 @@ select, input, textarea { -webkit-appearance: none; appearance: none; }
             <th>Number of PIV</th>
             <th>AD Office Status</th>
             <th>DD Office Status</th>
-            <th>Action</th>
+            <th>Edit</th>
           </tr>
         </thead>
         <tbody id="pivSubmissionsTbody"></tbody>
@@ -1709,23 +1727,65 @@ function getValFromCol(ans, col){
   return '';
 }
 
-function renderMy(){
-  var mine = getMyResponses();
-  populateMyFilters(mine);
+function getSelectedMonthValues(selectId){
+  var el = document.getElementById(selectId);
+  if(!el) return [];
+  return Array.from(el.selectedOptions || []).map(o => o.value).filter(Boolean);
+}
 
+function populateMyMonthFilters(mine){
+  [
+    { id: 'myFilterExtMonths', type: 'extension' },
+    { id: 'myFilterDevMonths', type: 'development' }
+  ].forEach(cfg => {
+    var el = document.getElementById(cfg.id);
+    if(!el) return;
+    var selected = getSelectedMonthValues(cfg.id);
+    var monthSet = new Set();
+    (mine || []).filter(r => norm(r.main_type) === cfg.type && r.created_at).forEach(r => {
+      var d = new Date(r.created_at);
+      if(!isNaN(d.getTime())) monthSet.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+    });
+    var months = Array.from(monthSet).sort().reverse();
+    el.innerHTML = months.map(m => {
+      var parts = m.split('-');
+      var label = new Date(Number(parts[0]), Number(parts[1])-1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'});
+      return '<option value="' + m + '">' + label + '</option>';
+    }).join('') || '<option value="" disabled>No update dates</option>';
+    Array.from(el.options).forEach(o => { o.selected = selected.includes(o.value); });
+  });
+}
+
+function isResponseWithinDays(r, days){
+  if(!r || !r.created_at) return false;
+  var created = new Date(r.created_at).getTime();
+  return Number.isFinite(created) && Date.now() - created <= days * 24 * 60 * 60 * 1000 && Date.now() >= created;
+}
+
+function getFilteredMyResponses(){
+  var mine = getMyResponses();
   var fMain = (document.getElementById('myFilterMain') || {}).value || '';
   var fL1 = (document.getElementById('myFilterL1') || {}).value || '';
   var fL2 = (document.getElementById('myFilterL2') || {}).value || '';
   var fL3 = (document.getElementById('myFilterL3') || {}).value || '';
   var q = norm((document.getElementById('mySearch') || {}).value || '');
+  var extMonths = getSelectedMonthValues('myFilterExtMonths');
+  var devMonths = getSelectedMonthValues('myFilterDevMonths');
 
-  var filtered = mine.filter(r => {
-    if(fMain && norm(r.main_type) !== norm(fMain)) return false;
+  return mine.filter(r => {
+    var type = norm(r.main_type);
+    if(fMain && type !== norm(fMain)) return false;
     if(fL1 && norm(r.level1) !== norm(fL1)) return false;
     if(fL2 && norm(r.level2) !== norm(fL2)) return false;
     if(fL3){
       var itStr = getItemNameForEntry(r);
       if(norm(r.level3) !== norm(fL3) && !norm(itStr).includes(norm(fL3))) return false;
+    }
+    if(type === 'extension' && extMonths.length){
+      if(!r.created_at || !extMonths.includes(new Date(r.created_at).getFullYear() + '-' + String(new Date(r.created_at).getMonth()+1).padStart(2,'0'))) return false;
+    }
+    if(type === 'development' && devMonths.length){
+      if(!r.created_at || !devMonths.includes(new Date(r.created_at).getFullYear() + '-' + String(new Date(r.created_at).getMonth()+1).padStart(2,'0'))) return false;
     }
     if(q){
       var blob = [r.level1, r.level2, r.level3, getItemNameForEntry(r), getOfficerForEntry(r), JSON.stringify(r.answers||{})].join(' ');
@@ -1733,6 +1793,14 @@ function renderMy(){
     }
     return true;
   });
+}
+
+function renderMy(){
+  var mine = getMyResponses();
+  populateMyFilters(mine);
+  populateMyMonthFilters(mine);
+  var fMain = (document.getElementById('myFilterMain') || {}).value || '';
+  var filtered = getFilteredMyResponses();
 
   var extRows = filtered.filter(r => norm(r.main_type) === 'extension');
   var devRows = expandMyDevEntries(filtered.filter(r => norm(r.main_type) === 'development'));
@@ -1756,7 +1824,10 @@ function renderMy(){
     return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-semibold">' + getOfficerForEntry(r) + '</td><td class="font-bold text-blue-700">' + getProgressedQtyForEntry(r) + '</td>' +
       extQKeys.map(k => '<td>' + formatAnswerCell((r.answers||{})[k]) + '</td>').join('') +
       '<td class="text-xs text-slate-500">' + dt + '</td>' +
-      '<td class="whitespace-nowrap"><button onclick="openMyEdit(\'' + r.id + '\',\'\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button><button onclick="deleteMyRow(\'' + r.id + '\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>';
+      '<td class="whitespace-nowrap">' +
+      (isResponseWithinDays(r, 15) ? '<button onclick="openMyEdit(\'' + r.id + '\',\'\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button>' : '<span class="text-slate-400 text-xs mr-2">Edit expired</span>') +
+      (isResponseWithinDays(r, 2) ? '<button onclick="deleteMyRow(\'' + r.id + '\')" class="text-indigo-700 font-bold text-xs">✏ Edit</button>' : '<span class="text-slate-400 text-xs">Delete expired</span>') +
+      '</td></tr>';
   }).join('') : '<tr><td colspan="' + (7 + extQKeys.length) + '" class="text-center py-6 text-slate-400">No Extension records found</td></tr>';
 
   var devCols = getOrderedDevColumnsForMyData(devRows);
@@ -1769,13 +1840,17 @@ function renderMy(){
     return '<tr><td>' + (r.level1||'-') + '</td><td>' + (r.level2||'-') + '</td><td>' + (r.level3||'-') + '</td><td class="font-semibold">' + (r._singleItem||'-') + '</td><td class="font-semibold">' + getOfficerForEntry(r) + '</td><td class="font-bold text-emerald-700">' + (r._displayQty||0) + '</td>' +
       devCols.map(c => '<td>' + formatAnswerCell(getValFromCol(r.answers, c)) + '</td>').join('') +
       '<td class="text-xs text-slate-500">' + dt + '</td>' +
-      '<td class="whitespace-nowrap"><button onclick="openMyEdit(\'' + r.id + '\',\'' + safeIt + '\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button><button onclick="deleteMyRow(\'' + r.id + '\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>';
+      '<td class="whitespace-nowrap">' +
+      (isResponseWithinDays(r, 15) ? '<button onclick="openMyEdit(\'' + r.id + '\',\'' + safeIt + '\')" class="text-indigo-600 font-bold text-xs mr-2">Edit</button>' : '<span class="text-slate-400 text-xs mr-2">Edit expired</span>') +
+      (isResponseWithinDays(r, 2) ? '<button onclick="deleteMyRow(\'' + r.id + '\')" class="text-indigo-700 font-bold text-xs">✏ Edit</button>' : '<span class="text-slate-400 text-xs">Delete expired</span>') +
+      '</td></tr>';
   }).join('') : '<tr><td colspan="' + (8 + devCols.length) + '" class="text-center py-6 text-slate-400">No Development records found</td></tr>';
 }
 
 function openMyEdit(id, itemEnc){
   var r = (responses||[]).find(x => String(x.id) === String(id));
   if(!r) return;
+  if(!isResponseWithinDays(r, 15)) return showToast('Edit is allowed only within 15 days of submission.', false);
   editingId = id;
   editingItemName = itemEnc ? decodeURIComponent(itemEnc) : null;
   document.getElementById('myEditRowBadge').textContent = (r.level2||'') + (editingItemName ? ' → ' + editingItemName : '');
@@ -1802,6 +1877,7 @@ async function saveMyEdit(){
   if(!editingId) return;
   var r = (responses||[]).find(x => String(x.id) === String(editingId));
   if(!r) return;
+  if(!isResponseWithinDays(r, 15)) { closeMyEdit(); return showToast('15-day edit period has expired.', false); }
   var newQty = parseFloat(document.getElementById('myEditQty').value) || 0;
   var ans = Object.assign({}, r.answers || {});
   document.querySelectorAll('#myEditFields input[data-edit-key]').forEach(inp => {
@@ -1823,6 +1899,9 @@ async function saveMyEdit(){
 }
 
 async function deleteMyRow(id){
+  var row = (responses||[]).find(r => String(r.id) === String(id));
+  if(!row) return;
+  if(!isResponseWithinDays(row, 2)) return showToast('Delete is allowed only within 2 days of submission.', false);
   var ok = await profConfirm('Delete this record permanently?', 'Delete Record');
   if(!ok) return;
   if(sb){
@@ -1837,7 +1916,7 @@ async function deleteMyRow(id){
 function downloadFilteredMyExcel(){
   if(typeof XLSX === 'undefined') return showToast('Excel library not loaded', false);
   var wb = XLSX.utils.book_new();
-  var mine = getMyResponses();
+  var mine = getFilteredMyResponses();
   var extRows = mine.filter(r => norm(r.main_type) === 'extension').map(r => {
     var obj = { Season: r.level1||'', Main_Program: r.level2||'', Sub_Program: r.level3||'', Qty: getProgressedQtyForEntry(r) };
     Object.keys(r.answers||{}).forEach(k => { if(!k.startsWith('__')) obj[getQuestionLabelByKey(k)] = formatAnswerCell(r.answers[k]); });
@@ -1931,19 +2010,48 @@ function recalcPivPaymentAmount(){
 }
 function resetPivForm(){
   document.getElementById('pivForm').reset();
+  editingPivId = null;
   window._curPivFarmerRate = 0;
   document.getElementById('pivFarmerUnitRate').textContent = 'Rs. 0.00';
   document.getElementById('pivPaymentAmountDisplay').value = 'Rs. 0.00';
+  document.getElementById('pivAutoUnitNoPreview').value = '';
+  var btn = document.getElementById('pivSubmitBtn');
+  btn.textContent = '💾 Submit PIV & Generate Unit Number';
+  document.getElementById('pivCancelEditBtn').classList.add('hidden');
+}
+function cancelPivEdit(){ resetPivForm(); showToast('PIV edit cancelled', true); }
+function editPivRow(id){
+  var p = (pivRecords||[]).find(x => String(x.id) === String(id));
+  if(!p) return showToast('PIV record not found', false);
+  editingPivId = p.id;
+  document.getElementById('pivYear').value = p.year || '';
+  onPivYearChange();
+  document.getElementById('pivMainProg').value = p.main_program || '';
+  onPivMainChange();
+  document.getElementById('pivSubProg').value = p.sub_program || '';
+  onPivSubChange();
+  document.getElementById('pivItem').value = p.item_name || '';
+  onPivItemChange();
+  document.getElementById('pivUnits').value = p.no_of_units ?? '';
+  document.getElementById('pivBankedDate').value = p.banked_date || '';
+  document.getElementById('pivSubmitDate').value = p.piv_submit_date || '';
+  document.getElementById('pivNumber').value = p.no_of_piv ?? p.piv_no ?? '';
+  document.getElementById('pivAutoUnitNoPreview').value = p.auto_unit_no || '';
+  recalcPivPaymentAmount();
+  document.getElementById('pivSubmitBtn').textContent = '💾 Update PIV Record';
+  document.getElementById('pivCancelEditBtn').classList.remove('hidden');
+  document.getElementById('pivForm').scrollIntoView({behavior:'smooth', block:'start'});
+  showToast('Edit the PIV details and press Update', true);
 }
 async function submitPivEntry(e){
   e.preventDefault();
-  var btn = document.getElementById('pivSubmitBtn'); btn.disabled = true; btn.textContent = 'Saving...';
+  var btn = document.getElementById('pivSubmitBtn');
+  btn.disabled = true;
+  var isEdit = !!editingPivId;
+  btn.textContent = isEdit ? 'Updating...' : 'Saving...';
   var units = parseFloat(document.getElementById('pivUnits').value) || 0;
   var amt = units * (window._curPivFarmerRate || 0);
-  var autoNo = 'PIV-' + String(Date.now()).slice(-6);
-  var rec = {
-    id: 'piv_' + Date.now(),
-    auto_unit_no: autoNo,
+  var fields = {
     year: document.getElementById('pivYear').value,
     main_program: document.getElementById('pivMainProg').value,
     sub_program: document.getElementById('pivSubProg').value,
@@ -1952,38 +2060,63 @@ async function submitPivEntry(e){
     payment_amount: amt,
     banked_date: document.getElementById('pivBankedDate').value,
     piv_submit_date: document.getElementById('pivSubmitDate').value,
-    no_of_piv: parseInt(document.getElementById('pivNumber').value,10)||0,
-    piv_no: parseInt(document.getElementById('pivNumber').value,10)||0,
-    sub_office_id: mySubId,
-    division: myDiv,
-    office: myOffice,
-    ad_status: 'Pending',
-    dd_status: 'Pending',
-    created_at: new Date().toISOString()
+    no_of_piv: parseInt(document.getElementById('pivNumber').value,10)||0
   };
-  pivRecords.unshift(rec);
-  if(sb){
-    var res = await sb.from('piv_submissions').insert(rec);
-    if(res.error){ pivRecords.shift(); showToast('Database Save Failed: ' + res.error.message, false); btn.disabled=false; btn.textContent='💾 Submit PIV & Generate Unit Number'; return; }
+  if(isEdit){
+    var oldRecord = (pivRecords||[]).find(p => String(p.id) === String(editingPivId));
+    if(!oldRecord){ showToast('PIV record not found', false); btn.disabled=false; btn.textContent='💾 Update PIV Record'; return; }
+    if(sb){
+      var upd = await sb.from('piv_submissions').update(fields).eq('id', editingPivId);
+      if(upd.error){ showToast('PIV Update Failed: ' + upd.error.message, false); btn.disabled=false; btn.textContent='💾 Update PIV Record'; return; }
+    }
+    pivRecords = (pivRecords||[]).map(p => String(p.id) === String(editingPivId) ? {...p, ...fields} : p);
+    showToast('PIV Updated ✓ (' + (oldRecord.auto_unit_no||'') + ')', true);
+    resetPivForm();
+  } else {
+    var autoNo = 'PIV-' + String(Date.now()).slice(-6);
+    var rec = {
+      id: 'piv_' + Date.now(), auto_unit_no: autoNo, ...fields,
+      sub_office_id: mySubId, division: myDiv, office: myOffice,
+      ad_status: 'Pending', dd_status: 'Pending', created_at: new Date().toISOString()
+    };
+    if(sb){
+      var res = await sb.from('piv_submissions').insert(rec);
+      if(res.error){ showToast('Database Save Failed: ' + res.error.message, false); btn.disabled=false; btn.textContent='💾 Submit PIV & Generate Unit Number'; return; }
+    }
+    pivRecords.unshift(rec);
+    document.getElementById('pivAutoUnitNoPreview').value = autoNo;
+    showToast('PIV Submitted ✓ (' + autoNo + ')', true);
+    resetPivForm();
   }
-  document.getElementById('pivAutoUnitNoPreview').value = autoNo;
-  showToast('PIV Submitted ✓ (' + autoNo + ')', true);
-  btn.disabled = false; btn.textContent = '💾 Submit PIV & Generate Unit Number';
+  btn.disabled = false;
   renderPivTable();
 }
 function renderPivTable(){
   var myPivs = (pivRecords||[]).filter(p => !myDiv || norm(p.division) === norm(myDiv));
   document.getElementById('pivRecordsCount').textContent = myPivs.length;
   var tbody = document.getElementById('pivSubmissionsTbody');
-  tbody.innerHTML = myPivs.length ? myPivs.map(p => '<tr><td class="font-bold text-indigo-700">'+(p.auto_unit_no||'-')+'</td><td>'+(p.year||'-')+'</td><td>'+(p.main_program||'-')+'</td><td>'+(p.sub_program||'-')+'</td><td>'+(p.item_name||'-')+'</td><td class="text-right font-bold">'+(p.no_of_units||0)+'</td><td class="text-right font-bold">Rs. '+parseNum(p.payment_amount).toFixed(2)+'</td><td>'+(p.banked_date||'-')+'</td><td>'+(p.piv_submit_date||'-')+'</td><td class="font-semibold">'+(p.no_of_piv||p.piv_no||'-')+'</td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">'+(p.ad_approval_status||p.ad_status||'Pending')+'</span></td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">'+(p.dd_approval_status||p.main_admin_status||p.dd_status||'Pending')+'</span></td><td><button onclick="deletePivRow(\''+p.id+'\')" class="text-red-600 font-bold text-xs">Del</button></td></tr>').join('') : '<tr><td colspan="13" class="text-center py-6 text-slate-400">No PIV records submitted</td></tr>';
+  tbody.innerHTML = myPivs.length ? myPivs.map(p => '<tr><td class="font-bold text-indigo-700">'+(p.auto_unit_no||'-')+'</td><td>'+(p.year||'-')+'</td><td>'+(p.main_program||'-')+'</td><td>'+(p.sub_program||'-')+'</td><td>'+(p.item_name||'-')+'</td><td class="text-right font-bold">'+(p.no_of_units||0)+'</td><td class="text-right font-bold">Rs. '+parseNum(p.payment_amount).toFixed(2)+'</td><td>'+(p.banked_date||'-')+'</td><td>'+(p.piv_submit_date||'-')+'</td><td class="font-semibold">'+(p.no_of_piv||p.piv_no||'-')+'</td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">'+(p.ad_approval_status||p.ad_status||'Pending')+'</span></td><td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">'+(p.dd_approval_status||p.main_admin_status||p.dd_status||'Pending')+'</span></td><td><button onclick="editPivRow(\''+p.id+'\')" class="text-indigo-700 font-bold text-xs">✏ Edit</button></td></tr>').join('') : '<tr><td colspan="13" class="text-center py-6 text-slate-400">No PIV records submitted</td></tr>';
 }
-async function deletePivRow(id){
-  var ok = await profConfirm('Delete this PIV record?', 'Delete PIV');
-  if(!ok) return;
-  if(sb){ var delRes = await sb.from('piv_submissions').delete().eq('id', id); if(delRes.error) return showToast('Delete Failed: '+delRes.error.message,false); }
-  pivRecords = (pivRecords||[]).filter(p => String(p.id) !== String(id));
-  showToast('PIV Deleted ✓', true);
-  renderPivTable();
+function downloadPivExcel(){
+  if(typeof XLSX === 'undefined') return showToast('Excel library not loaded', false);
+  var myPivs = (pivRecords||[]).filter(p => !myDiv || norm(p.division) === norm(myDiv));
+  if(!myPivs.length) return showToast('No PIV records to export', false);
+  var rows = myPivs.map(p => ({
+    'Auto Unit No': p.auto_unit_no || '', 'Year': p.year || '',
+    'Main Program': p.main_program || '', 'Sub Program': p.sub_program || '',
+    'Item': p.item_name || '', 'No of Units': p.no_of_units || 0,
+    'Payment Amount (Rs.)': parseNum(p.payment_amount),
+    'Banked Date': p.banked_date || '', 'PIV Submit Date': p.piv_submit_date || '',
+    'Number of PIV': p.no_of_piv ?? p.piv_no ?? '',
+    'AD Office Status': p.ad_approval_status || p.ad_status || 'Pending',
+    'DD Office Status': p.dd_approval_status || p.main_admin_status || p.dd_status || 'Pending',
+    'Division': p.division || '', 'Office': p.office || ''
+  }));
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:16},{wch:10},{wch:24},{wch:24},{wch:28},{wch:12},{wch:20},{wch:14},{wch:16},{wch:14},{wch:20},{wch:20},{wch:20},{wch:20}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'PIV Records');
+  XLSX.writeFile(wb, 'PIV_Submissions.xlsx');
 }
 
 /* ================= Supabase Sync & Auth ================= */
